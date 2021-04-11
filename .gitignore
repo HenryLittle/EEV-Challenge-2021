@@ -1,2 +1,3 @@
-./baseline/checkpoint/*
-./baseline/log/*
+baseline/checkpoint/*
+baseline/log/*
+tools/log
