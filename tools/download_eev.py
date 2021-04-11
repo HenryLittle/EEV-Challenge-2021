@@ -1,15 +1,13 @@
-import logging
 import time, os, random
 import pandas as pd
-import csv
 import argparse
+import subprocess
 from utils import parallel_process
 
-logging.basicConfig(filename='log/download_{}.log'.format(int(time.time())), filemode='w', level=logging.DEBUG)
 
-CSV_ROOT_PATH = '/home/kezhou/EEV/eev-csv'
+CSV_ROOT_PATH = '/data0/EEV/eev-csv'
 CSV_FILES = ['train.csv', 'val.csv']
-OUTPUT_PATH = '/home/kezhou/EEV/data'
+OUTPUT_PATH = '/data0/EEV/data'
 
 # 3061 vids in train [33 missing]
 # 755 vids in validation [5 missing]
@@ -19,13 +17,16 @@ OUTPUT_PATH = '/home/kezhou/EEV/data'
 # expected [Total Size]: 477GB
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--input-list', type=str, default='')
-parser.add_argument('--find-missing', type=int, choices=[0, 1], default=None, const=0, nargs='?', help='0: train/val, 1: test') # 0: train/val 1:test
-parser.add_argument('--download-tests', action='store_true', default=False)
+# ==> Runtime Config
 parser.add_argument('-j', '--num-thread', type=int, default=8)
+# ==> Function Selection
+parser.add_argument('--input-list', type=str, default='')
+parser.add_argument('--download-tests', action='store_true', default=False)
+parser.add_argument('--find-missing', type=int, choices=[0, 1], default=None, const=0, nargs='?', help='0: train/val, 1: test') # 0: train/val 1:test
 parser.add_argument('--gen-vidmap', action='store_true', default=False)
 
-def download_by_youtube_id(vid, output_format='mp4'):
+
+def download_by_youtube_id(vid, output_format='mp4', res=720):
 
     possible_ext = ['.mp4']
     for ext in possible_ext:
@@ -33,13 +34,11 @@ def download_by_youtube_id(vid, output_format='mp4'):
             print('Skipping:', vid)
             return # skip existed file
 
-    cmd = 'youtube-dl "https://www.youtube.com/watch?v={}" -o "{}/%(id)s.{}" --merge-output-format {}'
-    cmd = cmd.format(vid, OUTPUT_PATH, output_format, output_format)
+    cmd = 'youtube-dl "https://www.youtube.com/watch?v={vid}" -f "bestvideo[height<={res}]+bestaudio/best[height<={res}]" -o "{output_path}/%(id)s.{fmt}" --merge-output-format {fmt}'
+    cmd = cmd.format(vid=vid, res=res, output_path=OUTPUT_PATH, fmt=output_format)
     # print(cmd)
-    rv = os.system(cmd)
-
-    if rv: # download failed
-        logging.error(vid)
+    # rv = os.system(cmd)
+    f = subprocess.run(cmd.split(' '), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # avoid spamming host
     time.sleep(random.uniform(1.0, 1.5))
 
@@ -78,10 +77,11 @@ def find_missing_csv(column='YouTube ID', files=CSV_FILES):
         print('Expected videos:', len(vids))
 
         missing.extend(find_missing(vids))
-       
-    # check missing
-    with open('missing.txt', 'w') as file:
-        file.write('\n'.join(missing))
+
+        filename = os.path.splitext(file)[0]
+        # check missing
+        with open('missing_%s.txt' % (filename), 'w') as file:
+            file.write('\n'.join(missing))
 
 def gen_vidmap_csv(column='YouTube ID', files=CSV_FILES):
     for file in files:

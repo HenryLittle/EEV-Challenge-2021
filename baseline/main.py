@@ -15,7 +15,7 @@ from tensorboardX import SummaryWriter
 
 
 from args import parser
-from model import Baseline, Correlation
+from model import Baseline
 from eev_dataset import EEV_Dataset
 from utils import AverageMeter, correlation
 

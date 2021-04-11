@@ -1,7 +1,5 @@
 import torch
 from torch import nn
-import torch.nn.functional as F
-from mixture_of_experts import MoE
 
 class Baseline(nn.Module):
     def __init__(self):
