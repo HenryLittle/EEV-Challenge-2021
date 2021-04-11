@@ -1,5 +1,5 @@
 python3 main.py \
-    --epochs=200 --batch-size=3 -lr=0.0005 \
+    --epochs=1000 --batch-size=128 -lr=0.0001 --gpu=0\
     --train-vidmap=/data2/lkz/EEV/eev-csv/tools/vidmap_train.txt \
     --train-csv=/data2/lkz/EEV/eev-csv/train.csv \
     --val-vidmap=/data2/lkz/EEV/eev-csv/tools/vidmap_val.txt \

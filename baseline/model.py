@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 
-
 class Baseline(nn.Module):
     def __init__(self):
         super(Baseline, self).__init__()
@@ -23,7 +22,7 @@ class Baseline(nn.Module):
         x = self.contextGate1(x) # [B S 1280]
         x = self.linear(x)
         x = self.contextGate2(x) # [B S 15]
-        x = self.softmax(x) # to [0, 1] probability
+#        x = self.softmax(x)
         return x
 
 

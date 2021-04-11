@@ -27,3 +27,5 @@ parser.add_argument('--gpus', nargs='+', type=int, default=None)
 parser.add_argument('-j', '--workers', default=8, type=int)
 parser.add_argument('--root_log',type=str, default='log')
 parser.add_argument('--root_ckpt', type=str, default='checkpoint')
+parser.add_argument('--resume', default='', type=str, metavar='PATH',
+                    help='path to latest checkpoint (default: none)')
