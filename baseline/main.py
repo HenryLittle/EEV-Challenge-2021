@@ -1,11 +1,10 @@
-# import os
-# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-# os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 import torch
 import torch.nn.functional as F
 
 import time
-import os
 import shutil
 import numpy as np
 import math
@@ -32,7 +31,7 @@ def main():
     check_rootfolders(args)
 
     model = Baseline()
-    model = torch.nn.DataParallel(model, device_ids=args.gpus).cuda()
+    model = torch.nn.DataParallel(model).cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     # ckpt structure {epoch, state_dict, optimizer, best_corr}
     if args.resume and os.path.isfile(args.resume):
@@ -70,9 +69,9 @@ def main():
         num_workers=args.workers, pin_memory=False
     )
 
-    # criterion = torch.nn.KLDivLoss().cuda()
+    criterion = torch.nn.KLDivLoss().cuda()
     # criterion = torch.nn.L1Loss().cuda()
-    criterion = torch.nn.SmoothL1Loss(beta=args.sl1_beta).cuda()
+    # criterion = torch.nn.SmoothL1Loss(beta=args.sl1_beta).cuda()
     # criterion = Correlation().cuda()
     accuracy = correlation
     log_training = open(os.path.join(args.root_log, args.store_name, 'log.csv'), 'w')
@@ -122,8 +121,8 @@ def train(train_loader, model, criterion, optimizer, epoch, log, tb_writer):
 
         output = model(img_feat, au_feat)
         # log_softmax is numerically more stable than log(softmax(output)) [TESTED]
-        # loss = criterion(F.log_softmax(output, dim=2), labels) # [B S 15]
-        loss = criterion(output, labels) # [B S 15]
+        loss = criterion(F.log_softmax(output, dim=2), labels) # [B S 15]
+        # loss = criterion(output, labels) # [B S 15]
 
         losses.update(loss.item(), img_feat.size()[0])
         loss.backward()
@@ -133,7 +132,7 @@ def train(train_loader, model, criterion, optimizer, epoch, log, tb_writer):
 
         batch_time.update(time.time() - t_start)
         t_start = time.time() # reset timer
-        if i % args.print_freq == 0:
+        if i % args.print_freq == 0 or epoch <= 1:
             output = ('Epoch: [{0}][{1}/{2}], lr: {lr:.5f}\t'
                       'Time: {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Data Time: {data_time.val:.3f} ({data_time.avg:.3f})\t'
@@ -174,7 +173,9 @@ def validate(val_loader, model, criterion, accuracy, epoch, log, tb_writer):
             output = rearrange(output, 'Clip S C -> (Clip S) C')[:frame_count]
             labels = rearrange(labels, 'Clip S C -> (Clip S) C')[:frame_count]
 
-            loss = criterion(output, labels) 
+            # loss = criterion(output, labels) 
+            loss = criterion(F.log_softmax(output, dim=1), labels) # [B S 15]
+
             mean_cor, cor = accuracy(output, labels) # mean and per-class correlation
             # update statistics
             losses.update(loss.item())

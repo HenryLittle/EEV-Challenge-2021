@@ -34,11 +34,8 @@ def extract(filename, freq=6):
         os.mkdir(full_path)
     else:
         imgs = os.listdir(full_path)
-        if len(imgs) != 0:
-            if len(imgs) < 20:
-                print('Alert:', video_id)
-            else:
-                return 
+        assert len(imgs) != 0
+        return 
 
     cmd = 'ffmpeg -i {}/{} -threads 1 -vf scale=-1:320 -q:v 1 -r {} {}/{}/%06d.jpg'.format(VIDEO_ROOT, filename, freq, FRAME_ROOT, video_id)
     # extract frames

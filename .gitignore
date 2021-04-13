@@ -2,5 +2,5 @@ baseline/checkpoint/*
 baseline/log/*
 tools/log
 features
-baseline/__pycache__
-tools/__pycache__
+baseline/__pycache__/*
+tools/__pycache__/*

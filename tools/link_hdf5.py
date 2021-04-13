@@ -1,6 +1,6 @@
 import h5py as h5
 import numpy as np
-whole = h5.File('/data0/EEV/feats/EEV_InceptionV3_6Hz.hdf5','r+')
+whole = h5.File('/data0/EEV/feats/EEV_InceptionV3_6Hz.hdf5','w')
 p1 = h5.File('/data0/EEV/feats/EEV_InceptionV3_6Hz_1.hdf5','r')
 p2 = h5.File('/data0/EEV/feats/EEV_InceptionV3_6Hz_2.hdf5','r')
 p3 = h5.File('/data0/EEV/feats/EEV_InceptionV3_6Hz_3.hdf5','r')

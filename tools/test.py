@@ -24,10 +24,10 @@ res = sorted(res, key=lambda t: t[1])
 
 load_time = time.time() - st
 st = time.time()
-print([x[1] for x in res])
+# print([x[1] for x in res])
 
-res = [ttf(x[0]) for x in res]
+res = [x[1] for x in res]
 
-
+print(res)
 print('1288', 'transform', time.time() - st, 'load', load_time)
 # 4.6070 1377 imgs  7.2s total
