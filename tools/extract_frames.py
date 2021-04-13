@@ -40,7 +40,6 @@ def extract(filename, freq=6):
             else:
                 return 
 
-    
     cmd = 'ffmpeg -i {}/{} -threads 1 -vf scale=-1:320 -q:v 1 -r {} {}/{}/%06d.jpg'.format(VIDEO_ROOT, filename, freq, FRAME_ROOT, video_id)
     # extract frames
     # os.system(cmd)
