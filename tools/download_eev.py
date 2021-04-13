@@ -9,8 +9,9 @@ CSV_ROOT_PATH = '/data0/EEV/eev-csv'
 CSV_FILES = ['train.csv', 'val.csv']
 OUTPUT_PATH = '/data0/EEV/data'
 
-# 3061 vids in train [33 missing]
-# 755 vids in validation [5 missing]
+# 3061 vids in train [38 missing]
+# 755 vids in validation [10 missing]
+# 3768 / 3816
 # 1337 vids in test [30 missing]
 # *missing: [Unavailable, Private]
 # total = 3816 (train + val) + 1337 (test) = 5153
@@ -37,8 +38,8 @@ def download_by_youtube_id(vid, output_format='mp4', res=720):
     cmd = 'youtube-dl "https://www.youtube.com/watch?v={vid}" -f "bestvideo[height<={res}]+bestaudio/best[height<={res}]" -o "{output_path}/%(id)s.{fmt}" --merge-output-format {fmt}'
     cmd = cmd.format(vid=vid, res=res, output_path=OUTPUT_PATH, fmt=output_format)
     # print(cmd)
-    # rv = os.system(cmd)
-    f = subprocess.run(cmd.split(' '), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    rv = os.system(cmd)
+    # f = subprocess.run(cmd.split(' '), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # avoid spamming host
     time.sleep(random.uniform(1.0, 1.5))
 
@@ -69,8 +70,8 @@ def download_csv(files, column, num_thread):
 
 
 def find_missing_csv(column='YouTube ID', files=CSV_FILES):
-    missing = []
     for file in files:
+        missing = []
         content = pd.read_csv(os.path.join(CSV_ROOT_PATH, file))
         vids = list(set(content[column].to_list()))
 

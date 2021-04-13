@@ -12,8 +12,8 @@ from utils import parallel_process
 parser = argparse.ArgumentParser()
 parser.add_argument('-j', '--num-thread', type=int, default=24)
 
-VIDEO_ROOT = '/home/kezhou/EEV/data'
-FRAME_ROOT = '/data1/lkz/EEV/data-audio'
+VIDEO_ROOT = '/data0/EEV/data'
+FRAME_ROOT = '/data0/EEV/data-audio'
 
 
 logging.basicConfig(filename='log/ea_{}.log'.format(int(time.time())), filemode='w', level=logging.DEBUG)
