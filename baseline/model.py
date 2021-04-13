@@ -31,20 +31,24 @@ class ContextGating(nn.Module):
     def __init__(self, input_size):
         super(ContextGating, self).__init__()
         self.linear = nn.Linear(input_size, input_size, bias=True)
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         # print(x.size())
         wx = self.linear(x)
         # print(wx.size())
-        gates = self.sigmoid(wx)
+        gates = torch.sigmoid(wx)
         return gates * x
 
 
 
 class Correlation(nn.Module):
     def __init__(self):
-        pass
+        super(Correlation, self).__init__()
 
-    def forward(self, x):
-        pass
+    def forward(self, x, y):
+        vx = x - torch.mean(x, dim=0, keepdim=True) # mean along the temporal axis [S 15] - [1 15]
+        vy = y - torch.mean(y, dim=0, keepdim=True)
+
+        cor = torch.sum(vx * vy, dim=0) / (torch.sqrt(torch.sum(vx ** 2, dim=0) * torch.sum(vy ** 2, dim=0)) + 1e-6) # [15]
+        mean_cor = torch.mean(cor)
+        return 1 - mean_cor

@@ -71,7 +71,9 @@ def main():
     )
 
     # criterion = torch.nn.KLDivLoss().cuda()
-    criterion = torch.nn.L1Loss().cuda()
+    # criterion = torch.nn.L1Loss().cuda()
+    criterion = torch.nn.SmoothL1Loss(beta=args.sl1_beta).cuda()
+    # criterion = Correlation().cuda()
     accuracy = correlation
     log_training = open(os.path.join(args.root_log, args.store_name, 'log.csv'), 'w')
     with open(os.path.join(args.root_log, args.store_name, 'args.txt'), 'w') as f:
