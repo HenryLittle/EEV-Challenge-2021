@@ -50,6 +50,7 @@ if __name__ == '__main__':
         if os.path.isfile(args.input_list):
             with open(args.input_list) as file:
                 filenames = file.readlines()
+                filenames = [x.rstrip() for x in filenames]
                 print('Input list has', len(filenames), 'videos')
         else:
             exit(1)

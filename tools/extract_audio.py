@@ -2,7 +2,7 @@ import os
 import subprocess
 import argparse
 import json
-import logging
+# import logging
 import time
 from multiprocessing.pool import ThreadPool
 import threading
@@ -16,7 +16,7 @@ VIDEO_ROOT = '/data0/EEV/data'
 FRAME_ROOT = '/data0/EEV/data-audio'
 
 
-logging.basicConfig(filename='log/ea_{}.log'.format(int(time.time())), filemode='w', level=logging.DEBUG)
+# logging.basicConfig(filename='log/ea_{}.log'.format(int(time.time())), filemode='w', level=logging.DEBUG)
 
 def extract(filename):
     """ 

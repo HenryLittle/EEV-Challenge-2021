@@ -12,7 +12,7 @@ OUTPUT_PATH = '/data0/EEV/data'
 # 3061 vids in train [38 missing]
 # 755 vids in validation [10 missing]
 # 3768 / 3816
-# 1337 vids in test [30 missing]
+# 1337 vids in test [16 missing]
 # *missing: [Unavailable, Private]
 # total = 3816 (train + val) + 1337 (test) = 5153
 # expected [Total Size]: 477GB
@@ -25,7 +25,7 @@ parser.add_argument('--input-list', type=str, default='')
 parser.add_argument('--download-tests', action='store_true', default=False)
 parser.add_argument('--find-missing', type=int, choices=[0, 1], default=None, const=0, nargs='?', help='0: train/val, 1: test') # 0: train/val 1:test
 parser.add_argument('--gen-vidmap', action='store_true', default=False)
-
+parser.add_argument('--gen-vidlist', action='store_true', default=False)
 
 def download_by_youtube_id(vid, output_format='mp4', res=720):
 
@@ -101,7 +101,17 @@ def gen_vidmap_csv(column='YouTube ID', files=CSV_FILES):
         with open('vidmap_%s.txt' % filename, 'w') as file:
             file.write('\n'.join(vid_map))
 
-            
+def gen_vid_list(column='Video ID', files=['test.csv']):
+    for file in files:
+        content = pd.read_csv(os.path.join(CSV_ROOT_PATH, file))
+        vids = list(set(content[column].to_list()))
+
+        diff = set(find_missing(vids))
+        vids = list(set(vids) - diff)
+
+        filename = os.path.splitext(file)[0]
+        with open('vidlist_%s.txt' % (filename), 'w') as file:
+            file.write('\n'.join(vids))
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -120,6 +130,9 @@ if __name__ == '__main__':
     elif args.gen_vidmap:
         print('Generate vid to index map')
         gen_vidmap_csv(files=['train.csv', 'val.csv'])
+    elif args.gen_vidlist:
+        print('Generate test vid list')
+        gen_vid_list()
     else:
         print('Downloading train and validation...')
         download_csv(files=['train.csv', 'val.csv'], column='YouTube ID', num_thread=args.num_thread)
