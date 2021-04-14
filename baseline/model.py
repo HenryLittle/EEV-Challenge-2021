@@ -22,8 +22,8 @@ class Baseline(nn.Module):
         x = self.contextGate1(x) # [B S 1280]
         x = self.linear(x)
         x = self.contextGate2(x) # [B S 15]
-#        x = self.softmax(x)
-        # x = torch.sigmoid(x)
+        # x = self.softmax(x)
+        x = torch.sigmoid(x)
         return x
 
 

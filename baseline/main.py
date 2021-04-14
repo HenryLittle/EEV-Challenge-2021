@@ -11,7 +11,7 @@ import math
 from datetime import datetime
 from einops import rearrange
 from tensorboardX import SummaryWriter
-
+from tqdm import tqdm
 
 from args import parser
 from model import Baseline
@@ -20,10 +20,9 @@ from utils import AverageMeter, correlation
 
 best_corr = 0.0
 
-def main():
+def main_train():
     global args, best_corr
-    args = parser.parse_args()
-
+    
     args.store_name = 'Baseline_GRU'
     args.store_name = args.store_name + datetime.now().strftime('_%m-%d-%Y_%H-%M')
     args.start_epoch = 0
@@ -174,7 +173,8 @@ def validate(val_loader, model, criterion, accuracy, epoch, log, tb_writer):
             labels = rearrange(labels, 'Clip S C -> (Clip S) C')[:frame_count]
 
             # loss = criterion(output, labels) 
-            loss = criterion(F.log_softmax(output, dim=1), labels) # [B S 15]
+            # loss = criterion(F.log_softmax(output, dim=1), labels) # [B S 15]
+            loss = criterion(torch.log(output), labels) # [B S 15]
 
             mean_cor, cor = accuracy(output, labels) # mean and per-class correlation
             # update statistics
@@ -227,5 +227,87 @@ def save_checkpoint(state, is_best):
     if is_best:
         shutil.copyfile(filename, filename.replace('pth.tar', 'best.pth.tar'))
 
+def main_test():
+    print('Running test...')
+    torch.multiprocessing.set_sharing_strategy('file_system')
+    model = Baseline()
+    model = torch.nn.DataParallel(model).cuda()
+    # ckpt structure {epoch, state_dict, optimizer, best_corr}
+    if args.resume and os.path.isfile(args.resume):
+        print('Load checkpoint:', args.resume)
+        ckpt = torch.load(args.resume)
+        args.start_epoch = ckpt['epoch']
+        best_corr = ckpt['best_corr']
+        model.load_state_dict(ckpt['state_dict'])
+        print('Loaded ckpt at epoch:', args.start_epoch)
+    else:
+        print('No model given. Abort!')
+        exit(1)
+
+    test_loader = torch.utils.data.DataLoader(
+        dataset=EEV_Dataset(
+            csv_path=None,
+            vidmap_path=args.test_vidmap,
+            image_feat_path=args.image_features,
+            audio_feat_path=args.audio_features,
+            mode='test'
+        ),
+        batch_size=None, shuffle=False,
+        num_workers=args.workers, pin_memory=False
+    )
+
+    model.eval()
+    batch_time = AverageMeter()
+
+    t_start = time.time()
+
+    outputs = []
+    with torch.no_grad():
+        for i, (img_feat, au_feat, frame_count, vid) in enumerate(test_loader):
+            img_feat = torch.stack(img_feat).cuda()
+            au_feat = torch.stack(au_feat).cuda()
+            assert len(au_feat.size()) == 3, 'bad auf %s' % (vid)
+            output = model(img_feat, au_feat) # [Clip S 15]
+            # rearrange and remove extra padding in the end
+            output = rearrange(output, 'Clip S C -> (Clip S) C')[:frame_count]
+            outputs.append((vid, output.cpu().detach().numpy()))
+
+            # update statistics
+            batch_time.update(time.time() - t_start)
+            t_start = time.time()
+
+            if i % args.print_freq == 0:
+                output = ('Test: [{0}/{1}]\t'
+                          'Time: {batch_time.val:.3f} ({batch_time.avg:.3f})'.format(
+                    i, len(test_loader), batch_time=batch_time))
+                print(output)
+    
+    time_stamps = [0, 166666, 333333, 500000, 666666, 833333]
+    time_step = 1000000 # time starts at 0
+    header = 'Video ID,Timestamp (milliseconds),amusement,anger,awe,concentration,confusion,contempt,contentment,disappointment,doubt,elation,interest,pain,sadness,surprise,triumph\n'
+    with open('test_output.csv', 'w') as file:
+        file.write(header)
+        for vid, out in tqdm(outputs):# videos
+            frame_count = out.shape[0]
+            video_time = frame_count // 6
+            # print('video', vid, video_time)
+            for t in range(video_time): # seconds
+                for i in range(6): # frames
+                    timestamp = time_step * t + time_stamps[i]
+                    fcc = t * 6 + i
+                    if fcc >= frame_count:
+                        continue
+                    frame_output = out[fcc]
+                    frame_output = [str(x) for x in frame_output]
+                    temp = '{vid},{timestamp},'.format(vid=vid, timestamp=timestamp) + ','.join(frame_output) + '\n'
+                    file.write(temp)
+                    
+
+
 if __name__ == '__main__':
-    main()
+    global args
+    args = parser.parse_args()
+    if args.run_test:
+        main_test() # test model on test
+    else:
+        main_train() # train model using train only

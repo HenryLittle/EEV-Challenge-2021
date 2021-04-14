@@ -12,12 +12,15 @@ class EEV_Dataset(data.Dataset):
         assert image_freq in [2, 6] # Hz
         self.freq = image_freq # the intrinsic sample rate of image features
         self.sample_length = sample_length # 60 total frames
-        self.csv_content = pd.read_csv(csv_path)
+        if csv_path != None:
+            self.csv_content = pd.read_csv(csv_path)
+            # csv data
+            self.emotions = np.asarray(self.csv_content.iloc[:,2:], dtype=np.float32)
+            assert len(self.emotions[0]) == 15
+
         assert mode in ['train', 'val', 'test']
         self.mode = mode
-        # csv data
-        self.emotions = np.asarray(self.csv_content.iloc[:,2:], dtype=np.float32)
-        assert len(self.emotions[0]) == 15
+        
         self.vidmap_list = [x.strip().split(' ') for x in open(vidmap_path)]
         # features
         self.image_features = h5py.File(image_feat_path, 'r') # {vid: [x, 2048]} 2Hz
@@ -51,7 +54,25 @@ class EEV_Dataset(data.Dataset):
         return vid, vid_start_idx, vid_end_idx
 
     def get_test_item(self, index, output_freq=6):
-        return self.get_val_item(index, output_freq)
+        vid, _ = self.vidmap_list[index]
+
+        img_feat = np.asarray(self.image_features[vid])
+        au_feat = np.asarray(self.audio_features[vid])
+
+        img_feat_list = []
+        au_feat_list = []
+
+        start_idx = 0
+
+        frame_count = (img_feat.shape[0] // self.freq) * output_freq # total frames (feature freqency considered)
+        while start_idx < frame_count:
+            img_feat = img_feat[self._sample_indices_adv(start_idx, img_feat.shape[0], self.freq, output_freq)] # [60, 2048]
+            au_feat = au_feat[self._sample_indices_adv(start_idx, au_feat.shape[0], 1, output_freq)] # 
+            img_feat_list.append(img_feat)
+            au_feat_list.append(au_feat)
+            start_idx += self.sample_length # sample next item
+        assert len(img_feat_list) == len(au_feat_list)
+        return img_feat_list, au_feat_list, frame_count, vid
 
 
     def get_val_item(self, index, output_freq=1):

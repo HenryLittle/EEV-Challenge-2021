@@ -6,6 +6,8 @@ parser.add_argument('--train-vidmap', type=str) # vid to index in csv map
 parser.add_argument('--train-csv', type=str)    # target emotions
 parser.add_argument('--val-vidmap', type=str)
 parser.add_argument('--val-csv', type=str)
+parser.add_argument('--test-vidmap', type=str) # test list
+
 # ==== Extracted features ====
 parser.add_argument('--image-features', type=str)
 parser.add_argument('--audio-features', type=str)
@@ -30,3 +32,4 @@ parser.add_argument('--root_log',type=str, default='log')
 parser.add_argument('--root_ckpt', type=str, default='checkpoint')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
+parser.add_argument('--run-test', action='store_true', default=False)

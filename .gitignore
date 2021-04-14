@@ -3,4 +3,5 @@ baseline/log/*
 tools/log
 features
 baseline/__pycache__/*
+baseline/test_output.csv
 tools/__pycache__/*

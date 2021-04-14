@@ -32,8 +32,8 @@ def extract(filename):
     cmd = 'ffmpeg -i {}/{} -threads 1 -vn -acodec pcm_s16le -ac 1 -ar 16000 {}/{}.wav'.format(VIDEO_ROOT, filename, FRAME_ROOT, video_id)
 
     # extract audio
-    # print(cmd.split(' '))
-    f = subprocess.run(cmd.split(' '), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # print(cmd.split(' ')) , stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    f = subprocess.run(cmd.split(' '))
     
 
 
@@ -42,4 +42,5 @@ def extract(filename):
 if __name__ == '__main__':
     args = parser.parse_args()
     filenames = os.listdir(VIDEO_ROOT)
-    parallel_process(filenames, extract, n_jobs=args.num_thread)
+    extract('IHRncab3Cdg.mp4')
+    # parallel_process(['IHRncab3Cdg'], extract, n_jobs=args.num_thread)
