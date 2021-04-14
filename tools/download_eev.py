@@ -12,7 +12,7 @@ OUTPUT_PATH = '/data0/EEV/data'
 # 3061 vids in train [38 missing]
 # 755 vids in validation [10 missing]
 # 3768 / 3816
-# 1337 vids in test [16 missing]
+# 1337 vids in test [16 missing] 1321
 # *missing: [Unavailable, Private]
 # total = 3816 (train + val) + 1337 (test) = 5153
 # expected [Total Size]: 477GB
@@ -101,6 +101,33 @@ def gen_vidmap_csv(column='YouTube ID', files=CSV_FILES):
         with open('vidmap_%s.txt' % filename, 'w') as file:
             file.write('\n'.join(vid_map))
 
+def gen_length_vidmap_csv(column='Video ID', files=['test.csv']):
+    # [vid length] pair 
+    for file in files:
+        filename = os.path.splitext(file)[0]
+        content = pd.read_csv(os.path.join(CSV_ROOT_PATH, file))
+        entries = content[column].to_list()
+        vid_map = []
+        prev_vid = None
+        count = 0
+        sum = 0
+        for i, vid in enumerate(entries):
+            if vid == prev_vid or prev_vid == None:
+                if prev_vid == None:
+                    prev_vid = vid
+                count += 1
+            elif vid != prev_vid:
+                sum += count
+                vid_map.append('%s %d' % (prev_vid, count))
+                count = 1
+                prev_vid = vid
+        vid_map.append('%s %d' % (prev_vid, count))
+        sum += count
+        print(sum,'/ 2890742 total entries')
+        with open('vidmap_%s.txt' % filename, 'w') as file:
+            file.write('\n'.join(vid_map))
+
+
 def gen_vid_list(column='Video ID', files=['test.csv']):
     for file in files:
         content = pd.read_csv(os.path.join(CSV_ROOT_PATH, file))
@@ -129,7 +156,8 @@ if __name__ == '__main__':
         download_csv(files=['test.csv'], column='Video ID', num_thread=args.num_thread)
     elif args.gen_vidmap:
         print('Generate vid to index map')
-        gen_vidmap_csv(files=['train.csv', 'val.csv'])
+        # gen_vidmap_csv(files=['train.csv', 'val.csv'])
+        gen_length_vidmap_csv(column='Video ID', files=['test.csv'])
     elif args.gen_vidlist:
         print('Generate test vid list')
         gen_vid_list()

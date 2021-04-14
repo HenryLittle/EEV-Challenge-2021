@@ -270,7 +270,7 @@ def main_test():
             output = model(img_feat, au_feat) # [Clip S 15]
             # rearrange and remove extra padding in the end
             output = rearrange(output, 'Clip S C -> (Clip S) C')[:frame_count]
-            outputs.append((vid, output.cpu().detach().numpy()))
+            outputs.append((vid, frame_count, output.cpu().detach().numpy()))
 
             # update statistics
             batch_time.update(time.time() - t_start)
@@ -285,12 +285,13 @@ def main_test():
     time_stamps = [0, 166666, 333333, 500000, 666666, 833333]
     time_step = 1000000 # time starts at 0
     header = 'Video ID,Timestamp (milliseconds),amusement,anger,awe,concentration,confusion,contempt,contentment,disappointment,doubt,elation,interest,pain,sadness,surprise,triumph\n'
+    print('Write outputs...')
     with open('test_output.csv', 'w') as file:
         file.write(header)
-        for vid, out in tqdm(outputs):# videos
-            frame_count = out.shape[0]
-            video_time = frame_count // 6
+        for vid, frame_count, out in tqdm(outputs):# videos
+            video_time = frame_count // 6 + 1
             # print('video', vid, video_time)
+            entry_count = 0
             for t in range(video_time): # seconds
                 for i in range(6): # frames
                     timestamp = time_step * t + time_stamps[i]
@@ -301,7 +302,23 @@ def main_test():
                     frame_output = [str(x) for x in frame_output]
                     temp = '{vid},{timestamp},'.format(vid=vid, timestamp=timestamp) + ','.join(frame_output) + '\n'
                     file.write(temp)
-                    
+                    entry_count += 1
+            assert entry_count == frame_count
+        # fixed for now
+        missing = [('WKXrnB7alT8', 2919), ('o0ooW14pIa4', 3733), ('GufMoL_MuNE', 2038), ('Uee0Tv1rTz8', 1316), ('ScvvOWtb04Q', 152), ('R9kJlLungmo', 3609), ('QMW3GuohzzE', 822), ('fjJYTW2n6rk', 4108), ('rbTIMt0VcLw', 1084), ('L9cdaj74kLo', 3678), ('l-ka23gU4NA', 1759)]
+        print('Write missing...')
+        for vid, length in tqdm(missing):
+            video_time = length // 6 + 1
+            # print('video', vid, video_time)
+            for t in range(video_time): # seconds
+                for i in range(6): # frames
+                    timestamp = time_step * t + time_stamps[i]
+                    fcc = t * 6 + i
+                    if fcc >= length:
+                        continue
+                    frame_output = ',0'*15
+                    temp = '{vid},{timestamp}'.format(vid=vid, timestamp=timestamp) + frame_output + '\n'
+                    file.write(temp)
 
 
 if __name__ == '__main__':

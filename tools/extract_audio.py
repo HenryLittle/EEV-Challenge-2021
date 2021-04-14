@@ -42,5 +42,5 @@ def extract(filename):
 if __name__ == '__main__':
     args = parser.parse_args()
     filenames = os.listdir(VIDEO_ROOT)
-    extract('IHRncab3Cdg.mp4')
-    # parallel_process(['IHRncab3Cdg'], extract, n_jobs=args.num_thread)
+    # extract('IHRncab3Cdg.mp4')
+    parallel_process(['1Ga1X1yTMRk.mp4'], extract, n_jobs=args.num_thread)
