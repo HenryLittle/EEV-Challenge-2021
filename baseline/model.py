@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from einops import rearrange
 
 class Baseline(nn.Module):
     def __init__(self):
@@ -52,3 +53,81 @@ class Correlation(nn.Module):
         cor = torch.sum(vx * vy, dim=0) / (torch.sqrt(torch.sum(vx ** 2, dim=0) * torch.sum(vy ** 2, dim=0)) + 1e-6) # [15]
         mean_cor = torch.mean(cor)
         return 1 - mean_cor
+
+
+class ED_TCN(nn.Module):
+    def __init__(self, layers, in_channels, num_classes, kernel_size):
+        super(ED_TCN, self).__init__()
+        self.layer_count = len(layers)
+        self.layers = layers # confituration for eaach layer
+        self.ed_modules = []
+        input_size = in_channels
+        # >>> Encoder Layers <<<
+        for i in range(self.layer_count):
+            encoder = Encoder_TCN(input_size, self.layers[i], kernel_size) # [B C T]
+            input_size = self.layers[i]
+            self.ed_modules.append(encoder)
+        # >>> Decoder Layers <<<
+        for i in range(self.layer_count - 1, -1, -1):
+            decoder = Decoder_TCN(input_size, self.layers[i], kernel_size)
+            input_size = self.layers[i]
+            self.ed_modules.append(decoder)
+        self.linear = nn.Linear(input_size, num_classes) # [B T C]
+
+
+    def forward(self, x):
+        # x: [B FeatDim Duration]
+        # Conv1d works on termporal dimension
+        # filter count controls channel sizes
+        for layer in self.ed_modules:
+            x = layer(x)
+        x = rearrange(x, 'B C T -> B T C')
+        x = self.linear(x) # B T 15
+        return x
+
+
+class Encoder_TCN(nn.Module):
+    # an encoder layer in ED-TCN
+    def __init__(self, in_channels, out_channels, kernel_size):
+        super(Encoder_TCN, self).__init__()
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size)
+        self.dropout = nn.Dropout2d(0.3) # N C H W operates on C (may work with 3 dimensions)
+        self.activation = Norm_Relu(dim=1) # opeartes on frames
+        self.pool = nn.MaxPool1d(kernel_size=2)
+    
+    def forward(self, x):
+        # x: [B FeatDim Duration]
+        x = self.conv(x)
+        x = self.dropout(x)
+        x = self.activation(x)
+        x = self.pool(x)
+        return x
+
+
+class Decoder_TCN(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size):
+        super(Decoder_TCN, self).__init__()
+        self.upsample = nn.Upsample(scale_factor=2)
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size)
+        self.dropout = nn.Dropout2d(0.3)
+        self.activation = Norm_Relu(dim=1)
+    
+    def forward(self,  x):
+        x = self.upsample(x)
+        x = self.conv(x)
+        x = self.dropout(x)
+        x = self.activition(x)
+        return x
+
+
+class Norm_Relu(nn.Module):
+    # operate on frames
+    def __init__(self, dim=1):
+        super(Norm_Relu, self).__init__()
+        self.dim = dim # axis to apply normalization
+
+    def forward(self, x):
+        x = nn.functional.relu(x)
+        mx = torch.max(x, dim=self.dim, keepdim=True)
+        return x / (mx + 1e-5)
+
