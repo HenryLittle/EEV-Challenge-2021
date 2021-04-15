@@ -59,7 +59,7 @@ class ED_TCN(nn.Module):
     def __init__(self, layers, in_channels, num_classes, kernel_size):
         super(ED_TCN, self).__init__()
         self.layer_count = len(layers)
-        self.layers = layers # confituration for eaach layer
+        self.layers = layers # filter count for each layer
         self.ed_modules = []
         input_size = in_channels
         # >>> Encoder Layers <<<
@@ -83,6 +83,7 @@ class ED_TCN(nn.Module):
             x = layer(x)
         x = rearrange(x, 'B C T -> B T C')
         x = self.linear(x) # B T 15
+        x = torch.sigmoid(x)
         return x
 
 

@@ -23,13 +23,14 @@ best_corr = 0.0
 def main_train():
     global args, best_corr
     
-    args.store_name = 'Baseline_GRU'
+    args.store_name = '{}'.format(args.model)
     args.store_name = args.store_name + datetime.now().strftime('_%m-%d-%Y_%H-%M')
     args.start_epoch = 0
 
     check_rootfolders(args)
 
     model = Baseline()
+
     model = torch.nn.DataParallel(model).cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     # ckpt structure {epoch, state_dict, optimizer, best_corr}
@@ -285,40 +286,54 @@ def main_test():
     time_stamps = [0, 166666, 333333, 500000, 666666, 833333]
     time_step = 1000000 # time starts at 0
     header = 'Video ID,Timestamp (milliseconds),amusement,anger,awe,concentration,confusion,contempt,contentment,disappointment,doubt,elation,interest,pain,sadness,surprise,triumph\n'
-    print('Write outputs...')
+   
+    final_res = {}
+    for vid, frame_count, out in outputs:# videos
+        video_time = frame_count // 6 + 1
+        # print('video', vid, video_time)
+        entry_count = 0
+        for t in range(video_time): # seconds
+            for i in range(6): # frames
+                timestamp = time_step * t + time_stamps[i]
+                fcc = t * 6 + i
+                if fcc >= frame_count:
+                    continue
+                frame_output = out[fcc]
+                frame_output = [str(x) for x in frame_output]
+                temp = '{vid},{timestamp},'.format(vid=vid,timestamp=timestamp) + ','.join(frame_output) + '\n'
+                # file.write(temp)
+                if vid in final_res:
+                    final_res[vid].append(temp)
+                else:
+                    final_res[vid] = [temp]
+                entry_count += 1
+        assert entry_count == frame_count
+    # fixed for now
+    missing = [('WKXrnB7alT8', 2919), ('o0ooW14pIa4', 3733), ('GufMoL_MuNE',2038), ('Uee0Tv1rTz8', 1316), ('ScvvOWtb04Q', 152), ('R9kJlLungmo', 3609),('QMW3GuohzzE', 822), ('fjJYTW2n6rk', 4108), ('rbTIMt0VcLw', 1084),('L9cdaj74kLo', 3678), ('l-ka23gU4NA', 1759)]
+    for vid, length in missing:
+        video_time = length // 6 + 1
+        # print('video', vid, video_time)
+        for t in range(video_time): # seconds
+            for i in range(6): # frames
+                timestamp = time_step * t + time_stamps[i]
+                fcc = t * 6 + i
+                if fcc >= length:
+                    continue
+                frame_output = ',0'*15
+                temp = '{vid},{timestamp}'.format(vid=vid, timestamp=timestamp) + frame_output + '\n'
+                # file.write(temp)
+                if vid in final_res:
+                    final_res[vid].append(temp)
+                else:
+                    final_res[vid] = [temp]
+    print('Write test outputs...')
     with open('test_output.csv', 'w') as file:
         file.write(header)
-        for vid, frame_count, out in tqdm(outputs):# videos
-            video_time = frame_count // 6 + 1
-            # print('video', vid, video_time)
-            entry_count = 0
-            for t in range(video_time): # seconds
-                for i in range(6): # frames
-                    timestamp = time_step * t + time_stamps[i]
-                    fcc = t * 6 + i
-                    if fcc >= frame_count:
-                        continue
-                    frame_output = out[fcc]
-                    frame_output = [str(x) for x in frame_output]
-                    temp = '{vid},{timestamp},'.format(vid=vid, timestamp=timestamp) + ','.join(frame_output) + '\n'
-                    file.write(temp)
-                    entry_count += 1
-            assert entry_count == frame_count
-        # fixed for now
-        missing = [('WKXrnB7alT8', 2919), ('o0ooW14pIa4', 3733), ('GufMoL_MuNE', 2038), ('Uee0Tv1rTz8', 1316), ('ScvvOWtb04Q', 152), ('R9kJlLungmo', 3609), ('QMW3GuohzzE', 822), ('fjJYTW2n6rk', 4108), ('rbTIMt0VcLw', 1084), ('L9cdaj74kLo', 3678), ('l-ka23gU4NA', 1759)]
-        print('Write missing...')
-        for vid, length in tqdm(missing):
-            video_time = length // 6 + 1
-            # print('video', vid, video_time)
-            for t in range(video_time): # seconds
-                for i in range(6): # frames
-                    timestamp = time_step * t + time_stamps[i]
-                    fcc = t * 6 + i
-                    if fcc >= length:
-                        continue
-                    frame_output = ',0'*15
-                    temp = '{vid},{timestamp}'.format(vid=vid, timestamp=timestamp) + frame_output + '\n'
-                    file.write(temp)
+        temp_vidmap = [x.strip().split(' ') for x in open(args.test_vidmap)]
+        temp_vidmap = [x[0] for x in temp_vidmap]
+        for vid in tqdm(temp_vidmap):
+            for entry in final_res[vid]:
+                file.write(entry)
 
 
 if __name__ == '__main__':

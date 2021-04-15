@@ -12,6 +12,9 @@ parser.add_argument('--test-vidmap', type=str) # test list
 parser.add_argument('--image-features', type=str)
 parser.add_argument('--audio-features', type=str)
 
+# ==== Model Configs ====
+parser.add_argument('--model', type=str, choices=['Baseline', 'ED-TCN'], default='Baseline')
+
 # ==== Learning Configs ====
 parser.add_argument('--epochs', default=120, type=int, metavar='N')
 parser.add_argument('-b', '--batch-size', default=128, type=int)
