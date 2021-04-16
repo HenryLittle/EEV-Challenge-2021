@@ -1,6 +1,6 @@
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 import torch
 import torch.nn.functional as F
 
@@ -16,7 +16,7 @@ from tqdm import tqdm
 from args import parser
 from model import Baseline
 from eev_dataset import EEV_Dataset
-from utils import AverageMeter, correlation
+from utils import AverageMeter, correlation, loss_function
 
 best_corr = 0.0
 
@@ -123,17 +123,18 @@ def train(train_loader, model, criterion, optimizer, epoch, log, tb_writer):
         # log_softmax is numerically more stable than log(softmax(output)) [TESTED]
         # output = F.log_softmax(output, dim=2)
 
-        output1 = rearrange(output, 'B S C -> (B C) S')
-        labels1 = rearrange(labels, 'B S C -> (B C) S')
-        t_loss = F.l1_loss(output1, labels1) # termporal loss
+        # output1 = rearrange(output, 'B S C -> (B C) S')
+        # labels1 = rearrange(labels, 'B S C -> (B C) S')
+        # t_loss = F.l1_loss(output1, labels1) # termporal loss
 
-        output = torch.log(output)
-        output2 = rearrange(output, 'B S C -> (B S) C')
-        labels2 = rearrange(labels, 'B S C -> (B S) C')
-        # class loss
-        loss = criterion(output2, labels2) + 0.5 * t_loss # [B S 15]
+        # output = torch.log(output)
+        # output2 = rearrange(output, 'B S C -> (B S) C')
+        # labels2 = rearrange(labels, 'B S C -> (B S) C')
+        # # class loss
+        # loss = criterion(output2, labels2) + 0.0 * t_loss # [B S 15]
+        # loss = t_loss
         # loss = criterion(output, labels) # [B S 15]
-        
+        loss = loss_function(output, labels, criterion)
         losses.update(loss.item(), img_feat.size()[0])
         loss.backward()
 
@@ -180,12 +181,12 @@ def validate(val_loader, model, criterion, accuracy, epoch, log, tb_writer):
 
             output = model(img_feat, au_feat) # [Clip S 15]
             # rearrange and remove extra padding in the end
-            output = rearrange(output, 'Clip S C -> (Clip S) C')[:frame_count]
-            labels = rearrange(labels, 'Clip S C -> (Clip S) C')[:frame_count]
+            # output = rearrange(output, 'Clip S C -> (Clip S) C')[:frame_count]
+            # labels = rearrange(labels, 'Clip S C -> (Clip S) C')[:frame_count]
 
             # loss = criterion(output, labels) 
-            loss = criterion(F.log_softmax(output, dim=1), labels) # [(B*S) 15]
-            # loss = criterion(torch.log(output), labels) # [B S 15]
+            # loss = loss_function(output, labels, criterion)
+            loss = criterion(torch.log(output), labels) # [B S 15]
 
             mean_cor, cor = accuracy(output, labels) # mean and per-class correlation
             # update statistics

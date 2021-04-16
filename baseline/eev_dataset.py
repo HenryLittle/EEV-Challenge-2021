@@ -161,12 +161,13 @@ class EEV_Dataset(data.Dataset):
         return indices
 
 
-    def load_lables(self, vid_start_idx, vid_end_idx, output_freq=1):
+    def load_lables(self, vid_start_idx, vid_end_idx, output_freq):
         # if vid_end_idx == vid_start_idx:
         #     return np.asarray([self.emotions[vid_start_idx]])
         assert vid_start_idx <= vid_end_idx, '{} {}'.format(vid_start_idx, vid_end_idx)
         indices = self._sample_indices_adv(vid_start_idx, vid_end_idx, 6, output_freq)
-        return self.emotions[indices]
+        labels = self.emotions[indices]        
+        return labels
 
     
 
