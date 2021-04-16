@@ -18,7 +18,7 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
-def correlation(output, labels, dim = 1):
+def correlation(output, labels, dim = 0):
     # assumed shape [S 15]
     # implements Pearson's Correlation
     x = output

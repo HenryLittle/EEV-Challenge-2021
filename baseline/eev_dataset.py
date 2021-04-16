@@ -7,7 +7,7 @@ import torch
 
 
 class EEV_Dataset(data.Dataset):
-    def __init__(self, csv_path, vidmap_path, image_feat_path, audio_feat_path, mode='train', image_freq=6, sample_length=60):
+    def __init__(self, csv_path, vidmap_path, image_feat_path, audio_feat_path, mode='train', image_freq=6, sample_length=300):
         assert image_freq in [2, 6] # Hz
         self.freq = image_freq # the intrinsic sample rate of image features
         self.sample_length = sample_length # 60 total frames
@@ -61,20 +61,23 @@ class EEV_Dataset(data.Dataset):
         img_feat_list = []
         au_feat_list = []
 
-        start_idx = 0
+        start_sec = 0
 
         frame_count = int(total_frames) # total frames (feature freqency considered)
-        while start_idx < frame_count:
-            img_feat = img_feat[self._sample_indices_adv(start_idx, img_feat.shape[0], self.freq, output_freq)] # [60, 2048]
-            au_feat = au_feat[self._sample_indices_adv(start_idx, au_feat.shape[0], 1, output_freq)] # 
+        video_length = frame_count // 6
+        if frame_count % 6 != 0:
+            video_length += 1
+        while start_sec < video_length:
+            img_feat = img_feat[self._sample_indices_adv((start_sec * self.freq), img_feat.shape[0], self.freq, output_freq)] # [60, 2048]
+            au_feat = au_feat[self._sample_indices_adv(start_sec, au_feat.shape[0], 1, output_freq)] # [60, 128]
             img_feat_list.append(img_feat)
             au_feat_list.append(au_feat)
-            start_idx += self.sample_length # sample next item
+            start_sec += (self.sample_length // output_freq) # step the correspond time step
         assert len(img_feat_list) == len(au_feat_list)
         return img_feat_list, au_feat_list, frame_count, vid
 
 
-    def get_val_item(self, index, output_freq=1):
+    def get_val_item(self, index, output_freq=6):
         # return the full sequence in 60 frames segments
         # output_freq: frequncy of the sampled frames (default to 1Hz)
         vid, vid_start_idx, vid_end_idx = self.get_video_info(index)
@@ -86,20 +89,22 @@ class EEV_Dataset(data.Dataset):
         au_feat_list = []
         labels_list = []
 
-        start_idx = 0
-
-        frame_count = (img_feat.shape[0] // self.freq) * output_freq # total frames (feature freqency considered)
-        while start_idx < frame_count:
-            img_feat, au_feat, labels = self.sample_item(start_idx, img_feat, au_feat, vid_start_idx, vid_end_idx, output_freq)
+        start_sec = 0 # assumed to be second in video
+        frame_count = vid_end_idx - vid_start_idx
+        video_length = frame_count // 6 # total frames in video
+        if frame_count % 6 != 0:
+            video_length += 1
+        while start_sec < video_length:
+            img_feat, au_feat, labels = self.sample_item(start_sec, img_feat, au_feat, vid_start_idx, vid_end_idx, output_freq)
             img_feat_list.append(img_feat)
             au_feat_list.append(au_feat)
             labels_list.append(labels)
-            start_idx += self.sample_length # sample next item
+            start_sec += (self.sample_length // output_freq) # step the correspond time step
         assert len(img_feat_list) == len(au_feat_list) and len(au_feat_list) == len(labels_list)
         return img_feat_list, au_feat_list, labels_list, frame_count
 
 
-    def get_train_item(self, index):
+    def get_train_item(self, index, output_freq=6):
         # return a 60 seconds sequence inside a video
         vid, start_idx = self.vidmap_list[index]
         vid_start_idx = int(start_idx)
@@ -110,25 +115,26 @@ class EEV_Dataset(data.Dataset):
         img_feat_len = img_feat.shape[0]
 
         # image, audio and lables shares the same start index (seconds)
-        feat_start_idx = self.gen_start_idx(img_feat_len, self.freq)
+        feat_start_sec = self.gen_start_idx(img_feat_len, self.freq)
         # print(img_feat_len, au_feat_len, feat_start_idx)
-        img_feat, au_feat, labels = self.sample_item(feat_start_idx, img_feat, au_feat, vid_start_idx, vid_end_idx)
+        img_feat, au_feat, labels = self.sample_item(feat_start_sec, img_feat, au_feat, vid_start_idx, vid_end_idx, output_freq)
         return img_feat, au_feat, labels
     
     
-    def sample_item(self, start_index, img_feat, au_feat, vid_start_idx, vid_end_idx, output_freq=1):
+    def sample_item(self, start_sec, img_feat, au_feat, vid_start_idx, vid_end_idx, output_freq):
         # start_index: the start second in video
         # output_freq: output frequncy
         # sample {self.sample_length} frames form the given feature
-        img_feat = img_feat[self._sample_indices_adv(start_index, img_feat.shape[0], self.freq, output_freq)] # [60, 2048]
-        au_feat = au_feat[self._sample_indices_adv(start_index, au_feat.shape[0], 1, output_freq)] # [60, 128]
+        img_feat = img_feat[self._sample_indices_adv((start_sec * self.freq), img_feat.shape[0], self.freq, output_freq)] # [60, 2048]
+        au_feat = au_feat[self._sample_indices_adv(start_sec, au_feat.shape[0], 1, output_freq)] # [60, 128]
         # sample lables
-        labels = self.load_lables(vid_start_idx + start_index * 6, vid_end_idx, output_freq) # [60, 15]
+        labels = self.load_lables(vid_start_idx + (start_sec * 6), vid_end_idx, output_freq) # [60, 15]
         return img_feat, au_feat, labels
 
 
     def gen_start_idx(self, frame_count, freq):
-        start_pos = max(0, frame_count // freq - self.sample_length) # start pos in seconds
+        # return the start second for the sample
+        start_pos = max(0, (frame_count - self.sample_length) // freq) # start pos in seconds
         # return np.random.randint(0, start_pos + 1) # rand[)
         # numpy RNG is not stable when forked https://github.com/pytorch/pytorch/issues/5059
         # use torch random instead
@@ -141,25 +147,25 @@ class EEV_Dataset(data.Dataset):
         indices = [(start_idx + x * freq) if (start_idx + x * freq) < frame_count else (frame_count - freq) for x in range(self.sample_length)]
         return indices
     
-    def _sample_indices_adv(self, start_idx, frame_count, input_freq, output_freq):
+    def _sample_indices_adv(self, start_idx, end_idx, input_freq, output_freq):
         if input_freq < output_freq:
             # repetition is used to fill in the gaps
             repeat = output_freq // input_freq 
             indices = []
             for x in range(self.sample_length // repeat):
-                next_idx = (start_idx + x) if (start_idx + x) < frame_count else (frame_count - 1)
+                next_idx = (start_idx + x) if (start_idx + x) < end_idx else (end_idx - 1)
                 indices.extend([next_idx] * repeat)
         else:
             step = input_freq // output_freq
-            indices = [(start_idx + x * step) if (start_idx + x * step) < frame_count else (frame_count - step) for x in range(self.sample_length)]
+            indices = [(start_idx + x * step) if (start_idx + x * step) < end_idx else (end_idx - step) for x in range(self.sample_length)]
         return indices
 
 
     def load_lables(self, vid_start_idx, vid_end_idx, output_freq=1):
         # if vid_end_idx == vid_start_idx:
         #     return np.asarray([self.emotions[vid_start_idx]])
-        assert vid_start_idx <= vid_end_idx
-        indices = self._sample_indices_adv(vid_start_idx, vid_end_idx - vid_start_idx, 6, output_freq) 
+        assert vid_start_idx <= vid_end_idx, '{} {}'.format(vid_start_idx, vid_end_idx)
+        indices = self._sample_indices_adv(vid_start_idx, vid_end_idx, 6, output_freq)
         return self.emotions[indices]
 
     
