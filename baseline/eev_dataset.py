@@ -7,9 +7,12 @@ import torch
 
 
 class EEV_Dataset(data.Dataset):
-    def __init__(self, csv_path, vidmap_path, image_feat_path, audio_feat_path, mode='train', image_freq=6, sample_length=300):
+    def __init__(self, csv_path, vidmap_path, image_feat_path, audio_feat_path, mode='train', image_freq=6, sample_length=60, train_freq=1, val_freq=6, test_freq=6):
         assert image_freq in [2, 6] # Hz
         self.freq = image_freq # the intrinsic sample rate of image features
+        self.test_freq = test_freq
+        self.train_freq = train_freq
+        self.val_freq = val_freq
         self.sample_length = sample_length # 60 total frames
         if csv_path != None:
             self.csv_content = pd.read_csv(csv_path)
@@ -42,7 +45,7 @@ class EEV_Dataset(data.Dataset):
         elif self.mode == 'val':
             return self.get_val_item(index)
         elif self.mode == 'test':
-            return self.get_test_item(index)
+            return self.get_test_item(index, self.test_freq)
     
     def get_video_info(self, index):
         # return video id and [st,ed) index in lables
@@ -52,7 +55,7 @@ class EEV_Dataset(data.Dataset):
         vid_end_idx = int(self.vidmap_list[index + 1][1]) if index + 1 < len(self.vidmap_list) else len(self.emotions)
         return vid, vid_start_idx, vid_end_idx
 
-    def get_test_item(self, index, output_freq=6):
+    def get_test_item(self, index, output_freq):
         vid, total_frames = self.vidmap_list[index] # checked
 
         img_feat = np.asarray(self.image_features[vid])
@@ -68,11 +71,11 @@ class EEV_Dataset(data.Dataset):
         if frame_count % 6 != 0:
             video_length += 1
         while start_sec < video_length:
-            img_feat = img_feat[self._sample_indices_adv((start_sec * self.freq), img_feat.shape[0], self.freq, output_freq)] # [60, 2048]
-            au_feat = au_feat[self._sample_indices_adv(start_sec, au_feat.shape[0], 1, output_freq)] # [60, 128]
+            img_feat = img_feat[self._sample_indices_adv((start_sec * self.freq), img_feat.shape[0], self.freq, self.train_freq)] # [60, 2048]
+            au_feat = au_feat[self._sample_indices_adv(start_sec, au_feat.shape[0], 1, self.train_freq)] # [60, 128]
             img_feat_list.append(img_feat)
             au_feat_list.append(au_feat)
-            start_sec += (self.sample_length // output_freq) # step the correspond time step
+            start_sec += (self.sample_length // self.train_freq) # step the correspond time step
         assert len(img_feat_list) == len(au_feat_list)
         return img_feat_list, au_feat_list, frame_count, vid
 
@@ -95,7 +98,10 @@ class EEV_Dataset(data.Dataset):
         if frame_count % 6 != 0:
             video_length += 1
         while start_sec < video_length:
-            img_feat, au_feat, labels = self.sample_item(start_sec, img_feat, au_feat, vid_start_idx, vid_end_idx, output_freq)
+            img_feat = img_feat[self._sample_indices_adv((start_sec * self.freq), img_feat.shape[0], self.freq, self.train_freq)] # [60, 2048]
+            au_feat = au_feat[self._sample_indices_adv(start_sec, au_feat.shape[0], 1, self.train_freq)] # [60, 128]
+            labels = self.load_lables(vid_start_idx + (start_sec * 6), vid_end_idx, output_freq) # [60, 15]
+            # img_feat, au_feat, labels = self.sample_item(start_sec, img_feat, au_feat, vid_start_idx, vid_end_idx, output_freq)
             img_feat_list.append(img_feat)
             au_feat_list.append(au_feat)
             labels_list.append(labels)
@@ -104,7 +110,7 @@ class EEV_Dataset(data.Dataset):
         return img_feat_list, au_feat_list, labels_list, frame_count
 
 
-    def get_train_item(self, index, output_freq=6):
+    def get_train_item(self, index, output_freq=1):
         # return a 60 seconds sequence inside a video
         vid, start_idx = self.vidmap_list[index]
         vid_start_idx = int(start_idx)

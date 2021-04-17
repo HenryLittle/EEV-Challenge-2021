@@ -33,21 +33,33 @@ def correlation(output, labels, dim = 0):
     mean_cor = torch.mean(cor)
     return mean_cor, cor
 
-def loss_function(output, labels, criterion):
+def loss_function(output, labels, criterion, validate=False):
     # [B S C]
-    output1 = rearrange(output, 'B S C -> (B C) S')
-    labels1 = rearrange(labels, 'B S C -> (B C) S')
-    t_loss = F.l1_loss(output1, labels1) # termporal loss
+    # output1 = rearrange(output, 'B S C -> (B C) S')
+    # labels1 = rearrange(labels, 'B S C -> (B C) S')
+    if validate:
+        t_loss = F.l1_loss(output, labels) 
+        loss = t_loss
+    else:
+        output1 = rearrange(output, 'B S C -> (B C) S')
+        labels1 = rearrange(labels, 'B S C -> (B C) S')
+        t_loss = F.l1_loss(output1,  labels1)
 
-    output = torch.log(output)
-    output2 = rearrange(output, 'B S C -> (B S) C')
-    labels2 = rearrange(labels, 'B S C -> (B S) C')
-    l_sum = torch.sum(labels2, dim=1)
-    indices = []
-    for i in range(output2.size()[0]):
-        if l_sum[i] != 0.0:
-            indices.append(i)
+        output2 = rearrange(output, 'B S C -> (B S) C')
+        labels2 = rearrange(labels, 'B S C -> (B S) C')
+        c_loss = F.l1_loss(output2, labels2)
+        # c_loss = F.kl_div(torch.log(output2), labels2)
+        loss = t_loss + c_loss
+
+    # output = torch.log(output)
+    # output2 = rearrange(output, 'B S C -> (B S) C')
+    # labels2 = rearrange(labels, 'B S C -> (B S) C')
+    # l_sum = torch.sum(labels2, dim=1)
+    # indices = []
+    # for i in range(output2.size()[0]):
+    #     if l_sum[i] != 0.0:
+    #         indices.append(i)
 
     # class loss
-    loss = criterion(output2[indices], labels2[indices]) + 0.5 * t_loss # [B S 15]
+    # loss = criterion(output2[indices], labels2[indices]) + 0.5 * t_loss # [B S 15]
     return loss

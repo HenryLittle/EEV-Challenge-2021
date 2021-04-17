@@ -181,12 +181,15 @@ def validate(val_loader, model, criterion, accuracy, epoch, log, tb_writer):
 
             output = model(img_feat, au_feat) # [Clip S 15]
             # rearrange and remove extra padding in the end
-            # output = rearrange(output, 'Clip S C -> (Clip S) C')[:frame_count]
-            # labels = rearrange(labels, 'Clip S C -> (Clip S) C')[:frame_count]
-
+            output = rearrange(output, 'Clip S C -> (Clip S) C')
+            if args.train_freq < args.val_freq:
+                output = interpolate_output(output, args.train_freq, args.val_freq)
+            output = output[:frame_count]
+            labels = rearrange(labels, 'Clip S C -> (Clip S) C')[:frame_count]
+            
             # loss = criterion(output, labels) 
-            # loss = loss_function(output, labels, criterion)
-            loss = criterion(torch.log(output), labels) # [B S 15]
+            loss = loss_function(output, labels, criterion, validate=True)
+            # loss = criterion(torch.log(output), labels) # [B S 15]
 
             mean_cor, cor = accuracy(output, labels) # mean and per-class correlation
             # update statistics
@@ -262,7 +265,8 @@ def main_test():
             vidmap_path=args.test_vidmap,
             image_feat_path=args.image_features,
             audio_feat_path=args.audio_features,
-            mode='test'
+            mode='test',
+            test_freq=args.test_freq
         ),
         batch_size=None, shuffle=False,
         num_workers=args.workers, pin_memory=False
@@ -281,7 +285,15 @@ def main_test():
             assert len(au_feat.size()) == 3, 'bad auf %s' % (vid)
             output = model(img_feat, au_feat) # [Clip S 15]
             # rearrange and remove extra padding in the end
-            output = rearrange(output, 'Clip S C -> (Clip S) C')[:frame_count]
+            output = rearrange(output, 'Clip S C -> (Clip S) C')
+            output = torch.cat([output, output[-1:]]) # repeat the last frame to avoid missing 
+            if args.train_freq < args.test_freq:
+                # print('interpolating:', output.size()[0], frame_count)
+                output = interpolate_output(output, args.train_freq, 6)
+            # print('Interpolated:', output.size()[0], frame_count)
+            # truncate extra frames
+            assert output.size(0) >= frame_count, '{}/{}'.format(output.size(0), frame_count)
+            output = output[:frame_count]
             outputs.append((vid, frame_count, output.cpu().detach().numpy()))
 
             # update statistics
@@ -309,6 +321,7 @@ def main_test():
                 fcc = t * 6 + i
                 if fcc >= frame_count:
                     continue
+                # print('Frame count', frame_count)
                 frame_output = out[fcc]
                 frame_output = [str(x) for x in frame_output]
                 temp = '{vid},{timestamp},'.format(vid=vid,timestamp=timestamp) + ','.join(frame_output) + '\n'
@@ -347,6 +360,17 @@ def main_test():
                 file.write(entry)
 
 
+def interpolate_output(output, in_freq, out_freq):
+    # output [Time Cls]
+    scale = out_freq // in_freq
+    length = output.size()[0] # time length
+    out_length = scale * (length - 1) + 1 # make sure each sample point is aligned
+    output = F.interpolate(rearrange(output, '(1 T) C -> 1 C T'), out_length, mode='linear', align_corners=True)
+    output = rearrange(output, '1 C T -> (1 T) C')
+    # print(length, out_length, output.size()[0])
+    return output
+
+                
 if __name__ == '__main__':
     global args
     args = parser.parse_args()

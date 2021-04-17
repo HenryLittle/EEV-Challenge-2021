@@ -1,6 +1,6 @@
-
 python3 main.py \
     --epochs=1000 --batch-size=128 -lr=0.0001 --print-freq=20 --eval-freq=5 \
+    --train-freq=1 --val-freq=6 \
     --train-vidmap=/data0/EEV/code/tools/vidmap_train.txt \
     --train-csv=/data0/EEV/eev-csv/train.csv \
     --val-vidmap=/data0/EEV/code/tools/vidmap_val.txt \

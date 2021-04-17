@@ -23,8 +23,8 @@ class Baseline(nn.Module):
         x = self.contextGate1(x) # [B S 1280]
         x = self.linear(x)
         x = self.contextGate2(x) # [B S 15]
-        x = self.softmax(x)
-        # x = torch.sigmoid(x)
+        # x = self.softmax(x)
+        x = torch.sigmoid(x)
         return x
 
 
@@ -79,8 +79,15 @@ class ED_TCN(nn.Module):
         # x: [B FeatDim Duration]
         # Conv1d works on termporal dimension
         # filter count controls channel sizes
-        for layer in self.ed_modules:
+        en_out = []
+        de_out = []
+        for layer in self.ed_modules[0: self.layer_count]:
             x = layer(x)
+            en_out.append(x)
+        for layer in self.ed_modules[self.layer_count:]:
+            x = layer(x)
+            de_out.append(x)
+
         x = rearrange(x, 'B C T -> B T C')
         x = self.linear(x) # B T 15
         x = torch.sigmoid(x)
@@ -132,3 +139,79 @@ class Norm_Relu(nn.Module):
         mx = torch.max(x, dim=self.dim, keepdim=True)
         return x / (mx + 1e-5)
 
+class Encoder_TCFPN(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size):
+        super(Encoder_TCFPN, self).__init__()
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size) # B C T time wise convolution
+        self.bn = nn.BatchNorm1d(num_features=out_channels) # B C T
+        self.dropout = nn.Dropout2d(0.1) # N C H W operates on C (may work with 3 dimensions)
+        self.activation = nn.Relu()
+        self.pool = nn.MaxPool1d(kernel_size=2)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.dropout(x)
+        x = self.activation(x)
+        x = self.pool(x)
+        return x
+
+class Mid_TCFPN(nn.Module):
+    def __init__(self, in_channels, out_channels, scale_factor):
+        super(Mid_TCFPN, self).__init__()
+        self.conv = nn.Conv1d(in_channels, 1, 1)
+        self.dropout = nn.Dropout2d(0.1)
+        self.linear = nn.Linear(1, 15)
+        self.softmax = nn.Softmax(dim=1)
+        self.upsample_out = nn.Upsample(scale_factor)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = x.rearrange(x, 'B C T -> B T C')
+        x = self.linear(x)
+        x = self.softmax(x)
+        x = self.upsample_out(x)
+        return x
+
+class Decoder_TCFPN(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, num_classes, scale_factor):
+        super(Decoder_TCFPN, self).__init__()
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size) # B C T time wise convolution
+        self.aux_conv = nn.Conv1d(in_channels, out_channels, 1)
+        self.dropout = nn.Dropout2d(0.1) # N C H W operates on C (may work with 3 dimensions)
+        self.linear = nn.Linear(out_channels, num_classes)
+        self.softmax = nn.Softmax(dim=2) 
+        self.upsample_out = nn.Upsample(scale_factor) # operates on the last dim
+        self.upsample = nn.Upsample(scale_factor=2.0)
+
+    def forward(self, x, aux):
+        x = self.upsample(x)
+        aux = self.aux_conv(aux)
+        x = x + aux
+        x = self.conv(x)
+        x = self.dropout(x)
+        x = rearrange(x, 'B C T -> B T C')
+        x = self.linear(x)
+        x = self.softmax(x)
+        x = self.upsample_out(x)
+        return x
+
+class TCFPN(nn.Module):
+    def __init__(self, layers, in_channels, num_classes, kernel_size):
+        super(TCFPN, self).__init__()
+        self.layer_count = len(layers)
+        self.layers = layers # filter count for each layer
+        self.ed_modules = []
+        input_size = in_channels
+        # >>> Encoder Layers <<<
+        for i in range(self.layer_count):
+            encoder = Encoder_TCFPN(input_size, self.layers[i], kernel_size) # [B C T]
+            input_size = self.layers[i]
+            self.ed_modules.append(encoder)
+        self.mid_layer = Mid_TCFPN(self.layers[0])
+        # >>> Decoder Layers <<<
+        for i in range(self.layer_count - 1, -1, -1):
+            decoder = Decoder_TCFPN(input_size, self.layers[i], kernel_size)
+            input_size = self.layers[i]
+            self.ed_modules.append(decoder)
+        self.linear = nn.Linear(input_size, num_classes) # [B T C]
