@@ -8,22 +8,42 @@ import torch
 
 class EEV_Dataset(data.Dataset):
     def __init__(self, csv_path, vidmap_path, image_feat_path, audio_feat_path, mode='train', image_freq=6, sample_length=60, train_freq=1, val_freq=6, test_freq=6):
-        assert image_freq in [2, 6] # Hz
-        self.freq = image_freq # the intrinsic sample rate of image features
-        self.test_freq = test_freq
-        self.train_freq = train_freq
+        assert image_freq in [1, 6] # Hz
+        assert mode in ['train', 'val', 'test', 'merge']
+        self.mode = mode
+        self.image_freq = image_freq # the intrinsic sample rate of image features
+        self.train_freq = train_freq # freqency we trained the model on
+        self.test_freq = test_freq   # freqency to test/validate on, if greater than train_freq interpolate is engaged
         self.val_freq = val_freq
         self.sample_length = sample_length # 60 total frames
-        if csv_path != None:
+
+        if csv_path == None and mode != 'test':
+            raise RuntimeError('Empty labels!!')
+                    
+        if self.mode == 'merge':
+            self.vidmap_list = {}
+            assert len(vidmap_path) == 2, 'Expected 2 vidmaps got {}'.format(len(vidmap_path))
+            for i in range(2):
+                self.vidmap_list[i] = [x.strip().split(' ') for x in open(vidmap_path[i])]
+                self.vidmap_list[i] = [x.append(i) for x in self.vidmap_list[i]]
+            # vid, start_idx, map_idx
+            self.vidmap_list = self.vidmap_list[0] + self.vidmap_list[1]
+            # load csv data
+            temp_content = {}
+            assert len(csv_path) == 2, 'Expected 2 csv files got {}'.format(len(csv_path))
+            for i in range(2):
+                temp_content[i] = pd.read_csv(csv_path[i])
+                temp_content[i] = np.asarray(temp_content[i].iloc[:,2:], dtype=np.float32)
+            self.emotions = temp_content
+
+        else:
+            self.vidmap_list = [x.strip().split(' ') for x in open(vidmap_path)]
+
+            # load csv data
             self.csv_content = pd.read_csv(csv_path)
-            # csv data
             self.emotions = np.asarray(self.csv_content.iloc[:,2:], dtype=np.float32)
             assert len(self.emotions[0]) == 15
 
-        assert mode in ['train', 'val', 'test']
-        self.mode = mode
-        
-        self.vidmap_list = [x.strip().split(' ') for x in open(vidmap_path)]
         # features
         self.image_features = h5py.File(image_feat_path, 'r') # {vid: [x, 2048]} 2Hz
         self.audio_features = h5py.File(audio_feat_path, 'r') # {vid: [x, 128]} 0.96s per sample
@@ -45,7 +65,9 @@ class EEV_Dataset(data.Dataset):
         elif self.mode == 'val':
             return self.get_val_item(index)
         elif self.mode == 'test':
-            return self.get_test_item(index, self.test_freq)
+            return self.get_test_item(index)
+        elif self.mode == 'merge':
+            return self.get_tv_item(index)
     
     def get_video_info(self, index):
         # return video id and [st,ed) index in lables
@@ -54,8 +76,23 @@ class EEV_Dataset(data.Dataset):
         vid_start_idx = int(start_idx)
         vid_end_idx = int(self.vidmap_list[index + 1][1]) if index + 1 < len(self.vidmap_list) else len(self.emotions)
         return vid, vid_start_idx, vid_end_idx
+    
+    def get_tv_item(self, index):
+        vid, start_idx, data_split = self.vidmap_list[index]
+        vid_start_idx = int(start_idx)
+        if data_split == 0:
+            vid_end_idx = int(self.vidmap_list[index + 1][1]) if data_split < self.vidmap_list[index + 1][2] else len(self.emotions[data_split])
+        else:
+            vid_end_idx = int(self.vidmap_list[index + 1][1]) if index + 1 < len(self.vidmap_list) else len(self.emotions[data_split])
+        # load features
+        img_feat = np.asarray(self.image_features[vid])
+        au_feat = np.asarray(self.audio_features[vid])
+        # gen start sec
+        feat_start_sec = self.gen_start_idx(img_feat.shape[0], self.image_freq)
+        img_feat, au_feat, labels = self.sample_item(feat_start_sec, img_feat, au_feat, self.emotions[data_split], vid_start_idx, vid_end_idx, self.train_freq)
+        return img_feat, au_feat, labels
 
-    def get_test_item(self, index, output_freq):
+    def get_test_item(self, index):
         vid, total_frames = self.vidmap_list[index] # checked
 
         img_feat = np.asarray(self.image_features[vid])
@@ -71,7 +108,7 @@ class EEV_Dataset(data.Dataset):
         if frame_count % 6 != 0:
             video_length += 1
         while start_sec < video_length:
-            img_feat = img_feat[self._sample_indices_adv((start_sec * self.freq), img_feat.shape[0], self.freq, self.train_freq)] # [60, 2048]
+            img_feat = img_feat[self._sample_indices_adv((start_sec * self.image_freq), img_feat.shape[0], self.image_freq, self.train_freq)] # [60, 2048]
             au_feat = au_feat[self._sample_indices_adv(start_sec, au_feat.shape[0], 1, self.train_freq)] # [60, 128]
             img_feat_list.append(img_feat)
             au_feat_list.append(au_feat)
@@ -80,9 +117,8 @@ class EEV_Dataset(data.Dataset):
         return img_feat_list, au_feat_list, frame_count, vid
 
 
-    def get_val_item(self, index, output_freq=6):
+    def get_val_item(self, index):
         # return the full sequence in 60 frames segments
-        # output_freq: frequncy of the sampled frames (default to 1Hz)
         vid, vid_start_idx, vid_end_idx = self.get_video_info(index)
 
         img_feat = np.asarray(self.image_features[vid])
@@ -98,19 +134,18 @@ class EEV_Dataset(data.Dataset):
         if frame_count % 6 != 0:
             video_length += 1
         while start_sec < video_length:
-            img_feat = img_feat[self._sample_indices_adv((start_sec * self.freq), img_feat.shape[0], self.freq, self.train_freq)] # [60, 2048]
+            img_feat = img_feat[self._sample_indices_adv((start_sec * self.image_freq), img_feat.shape[0], self.image_freq, self.train_freq)] # [60, 2048]
             au_feat = au_feat[self._sample_indices_adv(start_sec, au_feat.shape[0], 1, self.train_freq)] # [60, 128]
-            labels = self.load_lables(vid_start_idx + (start_sec * 6), vid_end_idx, output_freq) # [60, 15]
-            # img_feat, au_feat, labels = self.sample_item(start_sec, img_feat, au_feat, vid_start_idx, vid_end_idx, output_freq)
+            labels = self.load_lables(self.emotions, vid_start_idx + (start_sec * 6), vid_end_idx, self.val_freq) # [60, 15]
             img_feat_list.append(img_feat)
             au_feat_list.append(au_feat)
             labels_list.append(labels)
-            start_sec += (self.sample_length // output_freq) # step the correspond time step
+            start_sec += (self.sample_length // self.train_freq) # step the correspond time step
         assert len(img_feat_list) == len(au_feat_list) and len(au_feat_list) == len(labels_list)
         return img_feat_list, au_feat_list, labels_list, frame_count
 
 
-    def get_train_item(self, index, output_freq=1):
+    def get_train_item(self, index):
         # return a 60 seconds sequence inside a video
         vid, start_idx = self.vidmap_list[index]
         vid_start_idx = int(start_idx)
@@ -121,20 +156,20 @@ class EEV_Dataset(data.Dataset):
         img_feat_len = img_feat.shape[0]
 
         # image, audio and lables shares the same start index (seconds)
-        feat_start_sec = self.gen_start_idx(img_feat_len, self.freq)
+        feat_start_sec = self.gen_start_idx(img_feat_len, self.image_freq)
         # print(img_feat_len, au_feat_len, feat_start_idx)
-        img_feat, au_feat, labels = self.sample_item(feat_start_sec, img_feat, au_feat, vid_start_idx, vid_end_idx, output_freq)
+        img_feat, au_feat, labels = self.sample_item(feat_start_sec, img_feat, au_feat, self.emotions, vid_start_idx, vid_end_idx, self.train_freq)
         return img_feat, au_feat, labels
     
     
-    def sample_item(self, start_sec, img_feat, au_feat, vid_start_idx, vid_end_idx, output_freq):
+    def sample_item(self, start_sec, img_feat, au_feat, labels, vid_start_idx, vid_end_idx, output_freq):
         # start_index: the start second in video
         # output_freq: output frequncy
         # sample {self.sample_length} frames form the given feature
-        img_feat = img_feat[self._sample_indices_adv((start_sec * self.freq), img_feat.shape[0], self.freq, output_freq)] # [60, 2048]
+        img_feat = img_feat[self._sample_indices_adv((start_sec * self.image_freq), img_feat.shape[0], self.image_freq, output_freq)] # [60, 2048]
         au_feat = au_feat[self._sample_indices_adv(start_sec, au_feat.shape[0], 1, output_freq)] # [60, 128]
         # sample lables
-        labels = self.load_lables(vid_start_idx + (start_sec * 6), vid_end_idx, output_freq) # [60, 15]
+        labels = self.load_lables(labels, vid_start_idx + (start_sec * 6), vid_end_idx, output_freq) # [60, 15]
         return img_feat, au_feat, labels
 
 
@@ -167,12 +202,12 @@ class EEV_Dataset(data.Dataset):
         return indices
 
 
-    def load_lables(self, vid_start_idx, vid_end_idx, output_freq):
+    def load_lables(self, labels, vid_start_idx, vid_end_idx, output_freq):
         # if vid_end_idx == vid_start_idx:
         #     return np.asarray([self.emotions[vid_start_idx]])
         assert vid_start_idx <= vid_end_idx, '{} {}'.format(vid_start_idx, vid_end_idx)
         indices = self._sample_indices_adv(vid_start_idx, vid_end_idx, 6, output_freq)
-        labels = self.emotions[indices]        
+        labels = labels[indices]        
         return labels
 
     

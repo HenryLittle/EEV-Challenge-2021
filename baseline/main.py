@@ -16,7 +16,7 @@ from tqdm import tqdm
 from args import parser
 from model import Baseline
 from eev_dataset import EEV_Dataset
-from utils import AverageMeter, correlation, loss_function
+from utils import AverageMeter, correlation, loss_function, interpolate_output
 
 best_corr = 0.0
 
@@ -120,20 +120,7 @@ def train(train_loader, model, criterion, optimizer, epoch, log, tb_writer):
         labels = labels.cuda()
 
         output = model(img_feat, au_feat)
-        # log_softmax is numerically more stable than log(softmax(output)) [TESTED]
-        # output = F.log_softmax(output, dim=2)
-
-        # output1 = rearrange(output, 'B S C -> (B C) S')
-        # labels1 = rearrange(labels, 'B S C -> (B C) S')
-        # t_loss = F.l1_loss(output1, labels1) # termporal loss
-
-        # output = torch.log(output)
-        # output2 = rearrange(output, 'B S C -> (B S) C')
-        # labels2 = rearrange(labels, 'B S C -> (B S) C')
-        # # class loss
-        # loss = criterion(output2, labels2) + 0.0 * t_loss # [B S 15]
-        # loss = t_loss
-        # loss = criterion(output, labels) # [B S 15]
+       
         loss = loss_function(output, labels, criterion)
         losses.update(loss.item(), img_feat.size()[0])
         loss.backward()
@@ -241,6 +228,9 @@ def save_checkpoint(state, is_best):
     torch.save(state, filename)
     if is_best:
         shutil.copyfile(filename, filename.replace('pth.tar', 'best.pth.tar'))
+
+def main_merge():
+    raise RuntimeError('Not Implemented yet')
 
 def main_test():
     print('Running test...')
@@ -360,15 +350,7 @@ def main_test():
                 file.write(entry)
 
 
-def interpolate_output(output, in_freq, out_freq):
-    # output [Time Cls]
-    scale = out_freq // in_freq
-    length = output.size()[0] # time length
-    out_length = scale * (length - 1) + 1 # make sure each sample point is aligned
-    output = F.interpolate(rearrange(output, '(1 T) C -> 1 C T'), out_length, mode='linear', align_corners=True)
-    output = rearrange(output, '1 C T -> (1 T) C')
-    # print(length, out_length, output.size()[0])
-    return output
+
 
                 
 if __name__ == '__main__':
@@ -376,5 +358,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.run_test:
         main_test() # test model on test
+    elif args.run_merge:
+        main_merge() # train model using merged train/val
     else:
         main_train() # train model using train only

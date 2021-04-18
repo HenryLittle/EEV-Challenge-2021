@@ -41,3 +41,4 @@ parser.add_argument('--root_ckpt', type=str, default='checkpoint')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('--run-test', action='store_true', default=False)
+parser.add_argument('--run-merge', action='store_true', default=False)

@@ -157,6 +157,7 @@ if __name__ == '__main__':
     elif args.gen_vidmap:
         print('Generate vid to index map')
         # gen_vidmap_csv(files=['train.csv', 'val.csv'])
+        # vid start_idx length
         gen_length_vidmap_csv(column='Video ID', files=['test.csv'])
     elif args.gen_vidlist:
         print('Generate test vid list')
