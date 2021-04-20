@@ -22,7 +22,7 @@ class AverageMeter(object):
 
 def interpolate_output(output, in_freq, out_freq):
     # output [Time Cls]
-    scale = out_freq // in_freq
+    scale = int(out_freq // in_freq)
     length = output.size()[0] # time length
     out_length = scale * (length - 1) + 1 # make sure each sample point is aligned
     output = F.interpolate(rearrange(output, '(1 T) C -> 1 C T'), out_length, mode='linear', align_corners=True)
@@ -43,12 +43,12 @@ def correlation(output, labels, dim = 0):
     mean_cor = torch.mean(cor)
     return mean_cor, cor
 
-def loss_function(output, labels, criterion, validate=False):
+def loss_function(output, labels, validate=False):
     # [B S C]
     # output1 = rearrange(output, 'B S C -> (B C) S')
     # labels1 = rearrange(labels, 'B S C -> (B C) S')
     if validate:
-        t_loss = F.l1_loss(output, labels) 
+        t_loss = F.l1_loss(output, labels)
         loss = t_loss
     else:
         output1 = rearrange(output, 'B S C -> (B C) S')
@@ -61,15 +61,4 @@ def loss_function(output, labels, criterion, validate=False):
         # c_loss = F.kl_div(torch.log(output2), labels2)
         loss = t_loss + c_loss
 
-    # output = torch.log(output)
-    # output2 = rearrange(output, 'B S C -> (B S) C')
-    # labels2 = rearrange(labels, 'B S C -> (B S) C')
-    # l_sum = torch.sum(labels2, dim=1)
-    # indices = []
-    # for i in range(output2.size()[0]):
-    #     if l_sum[i] != 0.0:
-    #         indices.append(i)
-
-    # class loss
-    # loss = criterion(output2[indices], labels2[indices]) + 0.5 * t_loss # [B S 15]
     return loss

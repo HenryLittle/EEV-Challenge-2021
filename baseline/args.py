@@ -13,7 +13,7 @@ parser.add_argument('--image-features', type=str)
 parser.add_argument('--audio-features', type=str)
 
 # ==== Model Configs ====
-parser.add_argument('--model', type=str, choices=['Baseline', 'ED-TCN'], default='Baseline')
+parser.add_argument('--model', type=str, choices=['Baseline', 'TCFPN'], default='Baseline')
 
 # ==== Learning Configs ====
 parser.add_argument('--epochs', default=120, type=int, metavar='N')
@@ -22,9 +22,19 @@ parser.add_argument('-lr', '--learning-rate', default=0.001, type=float, metavar
 parser.add_argument('-wd', '--weight-decay' , default=5e-4, type=float, metavar='W')
 parser.add_argument('--sl1-beta', default=0.1, type=float)
 parser.add_argument('--test-freq', type=int, default=6)
-parser.add_argument('--train-freq', type=int, default=1)
+parser.add_argument('--train-freq', type=float, default=1)
 parser.add_argument('--val-freq', type=int, default=6)
+parser.add_argument('--lp-filter', type=str, default=None)
+parser.add_argument('--use-sam', action='store_true', default=False)
+parser.add_argument('--use-swa', action='store_true', default=False)
+parser.add_argument('--swa-start', type=int, default=80)
 
+parser.add_argument('--use-cos', action='store_true', default=False)
+parser.add_argument('--cos-t-max', type=int, default=300)
+
+parser.add_argument('--use-cos-wr', action='store_true', default=False)
+parser.add_argument('--cos-wr-t0', type=int, default=5)
+parser.add_argument('--cos-wr-t-mult', type=int, default=2)
 
 # ===== Monitor Configs ====
 parser.add_argument('--print-freq', '-p', default=20, type=int,

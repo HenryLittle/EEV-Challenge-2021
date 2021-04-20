@@ -141,11 +141,11 @@ class Norm_Relu(nn.Module):
 
 class Encoder_TCFPN(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size):
-        super(Encoder_TCFPN, self).__init__()
-        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size) # B C T time wise convolution
+        super().__init__()
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, padding=(kernel_size - 1) // 2) # B C T time wise convolution
         self.bn = nn.BatchNorm1d(num_features=out_channels) # B C T
         self.dropout = nn.Dropout2d(0.1) # N C H W operates on C (may work with 3 dimensions)
-        self.activation = nn.Relu()
+        self.activation = nn.ReLU()
         self.pool = nn.MaxPool1d(kernel_size=2)
 
     def forward(self, x):
@@ -158,60 +158,85 @@ class Encoder_TCFPN(nn.Module):
 
 class Mid_TCFPN(nn.Module):
     def __init__(self, in_channels, out_channels, scale_factor):
-        super(Mid_TCFPN, self).__init__()
-        self.conv = nn.Conv1d(in_channels, 1, 1)
+        super().__init__()
+        self.conv = nn.Conv1d(in_channels, out_channels, 1)
         self.dropout = nn.Dropout2d(0.1)
-        self.linear = nn.Linear(1, 15)
+        self.linear = nn.Linear(out_channels, 15)
         self.softmax = nn.Softmax(dim=1)
-        self.upsample_out = nn.Upsample(scale_factor)
+        self.upsample_out = nn.Upsample(scale_factor=scale_factor)
 
     def forward(self, x):
         x = self.conv(x)
-        x = x.rearrange(x, 'B C T -> B T C')
-        x = self.linear(x)
-        x = self.softmax(x)
-        x = self.upsample_out(x)
-        return x
+        x_out = rearrange(x, 'B C T -> B T C')
+        x_out = self.linear(x_out)
+        x_out = rearrange(x_out, 'B T C -> B C T')
+        x_out = self.softmax(x_out)
+        x_out = self.upsample_out(x_out)
+        return x, x_out
 
 class Decoder_TCFPN(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, num_classes, scale_factor):
-        super(Decoder_TCFPN, self).__init__()
-        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size) # B C T time wise convolution
-        self.aux_conv = nn.Conv1d(in_channels, out_channels, 1)
+    def __init__(self, in_channels, out_channels, aux_in, kernel_size, num_classes, scale_factor):
+        super().__init__()
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size, padding=(kernel_size - 1) // 2) # B C T time wise convolution
+        self.aux_conv = nn.Conv1d(aux_in, out_channels, 1)
         self.dropout = nn.Dropout2d(0.1) # N C H W operates on C (may work with 3 dimensions)
         self.linear = nn.Linear(out_channels, num_classes)
-        self.softmax = nn.Softmax(dim=2) 
-        self.upsample_out = nn.Upsample(scale_factor) # operates on the last dim
+        self.softmax = nn.Softmax(dim=1) 
+        self.upsample_out = nn.Upsample(scale_factor=scale_factor) # operates on the last dim
         self.upsample = nn.Upsample(scale_factor=2.0)
 
     def forward(self, x, aux):
         x = self.upsample(x)
-        aux = self.aux_conv(aux)
-        x = x + aux
+        if aux != None:
+            aux = self.aux_conv(aux)
+            x = x + aux
         x = self.conv(x)
-        x = self.dropout(x)
-        x = rearrange(x, 'B C T -> B T C')
-        x = self.linear(x)
-        x = self.softmax(x)
-        x = self.upsample_out(x)
-        return x
+        x = self.dropout(x) # B C T
+        x_out = rearrange(x, 'B C T -> B T C') # C channel
+        x_out = self.linear(x_out)
+        x_out = rearrange(x_out, 'B T C -> B C T')
+        x_out = self.softmax(x_out) # dim 1
+        x_out = self.upsample_out(x_out)
+        return x, x_out
 
 class TCFPN(nn.Module):
     def __init__(self, layers, in_channels, num_classes, kernel_size):
-        super(TCFPN, self).__init__()
+        super().__init__()
         self.layer_count = len(layers)
         self.layers = layers # filter count for each layer
         self.ed_modules = []
         input_size = in_channels
         # >>> Encoder Layers <<<
         for i in range(self.layer_count):
-            encoder = Encoder_TCFPN(input_size, self.layers[i], kernel_size) # [B C T]
+            encoder = Encoder_TCFPN(input_size, self.layers[i], kernel_size).cuda() # [B C T]
             input_size = self.layers[i]
             self.ed_modules.append(encoder)
-        self.mid_layer = Mid_TCFPN(self.layers[0])
+        self.mid_layer = Mid_TCFPN(input_size, self.layers[0], 8)
         # >>> Decoder Layers <<<
-        for i in range(self.layer_count - 1, -1, -1):
-            decoder = Decoder_TCFPN(input_size, self.layers[i], kernel_size)
-            input_size = self.layers[i]
+        for i in range(self.layer_count - 1, -1, -1): #  2 1 0
+            decoder = Decoder_TCFPN(self.layers[0], self.layers[0], self.layers[i - 1], kernel_size, num_classes, 2**i).cuda()
+            input_size = self.layers[0]
             self.ed_modules.append(decoder)
-        self.linear = nn.Linear(input_size, num_classes) # [B T C]
+
+    def forward(self, img, au):
+        # B T C
+        x = torch.cat((img, au), dim=-1)
+        x = rearrange(x, 'B T C -> B C T')
+        
+        encode_out = []
+        decode_out = []
+        for mod in self.ed_modules[:len(self.ed_modules)//2]:
+            x = mod(x)
+            encode_out.append(x)
+        x, x_out = self.mid_layer(x)
+        decode_out.append(x_out)
+        for i, mod in enumerate(self.ed_modules[len(self.ed_modules)//2:]):
+            if i == 2:
+                x, x_out = mod(x, None)
+            else: # 0, 1 -> 
+                x, x_out = mod(x, encode_out[1 - i])
+            decode_out.append(x_out)
+        x = torch.stack(decode_out, dim=0)
+        avg = torch.mean(x, dim=0) # B Channel T
+        out = rearrange(avg, 'B C T -> B T C')
+        return out

@@ -1,5 +1,8 @@
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from einops import rearrange
+import torch.nn.functional as F
+import torch
 
 def parallel_process(array, function, n_jobs=4, use_kwargs=False, front_num=1):
     """
@@ -46,3 +49,27 @@ def parallel_process(array, function, n_jobs=4, use_kwargs=False, front_num=1):
         except Exception as e:
             out.append(e)
     return front + out
+
+
+def interpolate_output(output, in_freq, out_freq):
+    # output [Time Cls]
+    scale = out_freq // in_freq
+    length = output.size()[0] # time length
+    out_length = scale * (length - 1) + 1 # make sure each sample point is aligned
+    output = F.interpolate(rearrange(output, '(1 T) C -> 1 C T'), out_length, mode='linear', align_corners=True)
+    output = rearrange(output, '1 C T -> (1 T) C')
+    # print(length, out_length, output.size()[0])
+    return output
+
+def correlation(output, labels, dim = 0):
+    # assumed shape [S 15]
+    # implements Pearson's Correlation
+    x = output
+    y = labels
+
+    vx = x - torch.mean(x, dim=dim, keepdim=True) # mean along the temporal axis [S 15] - [1 15]
+    vy = y - torch.mean(y, dim=dim, keepdim=True)
+
+    cor = torch.sum(vx * vy, dim=dim) / (torch.sqrt(torch.sum(vx ** 2, dim=dim) * torch.sum(vy ** 2, dim=dim)) + 1e-6) # [15]
+    mean_cor = torch.mean(cor)
+    return mean_cor, cor
