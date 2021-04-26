@@ -1,14 +1,22 @@
-def _sample_indices_adv(sample_length, start_idx, frame_count, input_freq, output_freq):
-    if input_freq < output_freq:
-        # repetition is used to fill in the gaps
-        repeat = output_freq // input_freq 
-        indices = []
-        for x in range(sample_length // repeat):
-            next_idx = (start_idx + x) if (start_idx + x) < frame_count else (frame_count - 1)
-            indices.extend([next_idx] * repeat)
-    else:
-        step = input_freq // output_freq
-        indices = [(start_idx + x * step) if (start_idx + x * step) <frame_count else (frame_count - step) for x in range(sample_length)]
-    return indices
-
-print(_sample_indices_adv(10, 0, 60, 6, 6))
+# fit a final xgboost model on the housing dataset and make a prediction
+from numpy import asarray
+from pandas import read_csv
+from xgboost import XGBRegressor
+# load the dataset
+url = 'https://raw.githubusercontent.com/jbrownlee/Datasets/master/housing.csv'
+dataframe = read_csv(url, header=None)
+data = dataframe.values
+# split dataset into input and output columns
+X, y = data[:, :-1], data[:, -1]
+print(X.shape, y.shape)
+# define model
+model = XGBRegressor()
+# fit model
+model.fit(X, y)
+# define new data
+row = [0.00632,18.00,2.310,0,0.5380,6.5750,65.20,4.0900,1,296.0,15.30,396.90,4.98]
+new_data = asarray([row])
+# make a prediction
+yhat = model.predict(new_data)
+# summarize prediction
+print('Predicted: %.3f' % yhat)

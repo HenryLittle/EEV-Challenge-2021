@@ -5,3 +5,11 @@ features
 baseline/__pycache__/*
 baseline/test_output.csv
 tools/__pycache__/*
+baseline/*.csv
+tools/mean_std.pkl
+tools/merge_pkl.py
+tools/merge_resnet.py
+tools/*.csv
+baseline/extract_sound_wav-1.py
+baseline/extract_sound_wav-2.py
+baseline/extract_sound_wav-3.py

@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-j', '--num-thread', type=int, default=24)
 
 VIDEO_ROOT = '/data0/EEV/data'
-FRAME_ROOT = '/data0/EEV/data-audio'
+FRAME_ROOT = '/data/EEV/data-audio'
 
 
 # logging.basicConfig(filename='log/ea_{}.log'.format(int(time.time())), filemode='w', level=logging.DEBUG)
@@ -43,4 +43,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
     filenames = os.listdir(VIDEO_ROOT)
     # extract('IHRncab3Cdg.mp4')
-    parallel_process(['1Ga1X1yTMRk.mp4'], extract, n_jobs=args.num_thread)
+    parallel_process(filenames, extract, n_jobs=args.num_thread)

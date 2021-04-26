@@ -3,16 +3,21 @@ import pandas as pd
 import numpy as np
 import h5py
 import torch
+import torch.nn.functional as F
+import os
+import pickle as pkl
 from scipy import signal, ndimage
 from einops import rearrange
-
+from tqdm import tqdm
 
 class EEV_Dataset(data.Dataset):
-    def __init__(self, csv_path, vidmap_path, image_feat_path, audio_feat_path, mode='train', lpfilter=None, image_freq=6, sample_length=60, train_freq=1, val_freq=6, test_freq=6):
+    def __init__(self, csv_path, vidmap_path, image_feat_path, audio_feat_path, mode='train', lpfilter=None, image_freq=6, sample_length=60, train_freq=1, val_freq=6, test_freq=6, cls_indices=None, repeat_sample=False):
         assert image_freq in [1, 6] # Hz
         assert mode in ['train', 'val', 'test', 'merge']
         self.mode = mode
+        self.cls_indices = cls_indices
         self.filter = lpfilter
+        self.repeat_sample = repeat_sample
         self.image_freq = image_freq # the intrinsic sample rate of image features
         self.train_freq = train_freq # freqency we trained the model on
         self.test_freq = test_freq   # freqency to test/validate on, if greater than train_freq interpolate is engaged
@@ -26,10 +31,12 @@ class EEV_Dataset(data.Dataset):
             self.vidmap_list = {}
             assert len(vidmap_path) == 2, 'Expected 2 vidmaps got {}'.format(len(vidmap_path))
             for i in range(2):
+                print(vidmap_path[i])
                 self.vidmap_list[i] = [x.strip().split(' ') for x in open(vidmap_path[i])]
-                self.vidmap_list[i] = [x.append(i) for x in self.vidmap_list[i]]
+                self.vidmap_list[i] = [x + [i] for x in self.vidmap_list[i]]
             # vid, start_idx, map_idx
             self.vidmap_list = self.vidmap_list[0] + self.vidmap_list[1]
+            print('Merged:', len(self.vidmap_list))
             # load csv data
             temp_content = {}
             assert len(csv_path) == 2, 'Expected 2 csv files got {}'.format(len(csv_path))
@@ -48,8 +55,28 @@ class EEV_Dataset(data.Dataset):
                 assert len(self.emotions[0]) == 15
 
         # features
-        self.image_features = h5py.File(image_feat_path, 'r') # {vid: [x, 2048]} 2Hz
-        self.audio_features = h5py.File(audio_feat_path, 'r') # {vid: [x, 128]} 0.96s per sample
+        im_ext = os.path.splitext(image_feat_path)[-1]
+        if im_ext == '.hd5f' or im_ext == '.hdf5':
+            self.image_features = h5py.File(image_feat_path, 'r') # {vid: [x, 2048]} 2Hz
+        elif im_ext == '.pkl':
+            f = open(image_feat_path, 'rb')
+            self.image_features = pkl.load(f)
+        au_ext = os.path.splitext(audio_feat_path)[-1]
+        if au_ext == '.hdf5' or au_ext == '.hd5f':
+            self.audio_features = h5py.File(audio_feat_path, 'r') # {vid: [x, 128]} 0.96s per sample
+        else:
+            self.audio_features = {}
+            filenames = os.listdir(audio_feat_path)
+            print('Loading audio features from:', audio_feat_path)
+            for file in tqdm(filenames):
+                f = open(os.path.join(audio_feat_path, file), 'rb')
+                p = pkl.load(f)
+                f_name = os.path.splitext(file)[0] # filename => vid
+                self.audio_features[f_name] = p
+                f.close()
+
+
+
 
         # filter bad samples
         print('vidmap list length:', len(self.vidmap_list))
@@ -84,7 +111,7 @@ class EEV_Dataset(data.Dataset):
         vid, start_idx, data_split = self.vidmap_list[index]
         vid_start_idx = int(start_idx)
         if data_split == 0:
-            vid_end_idx = int(self.vidmap_list[index + 1][1]) if data_split < self.vidmap_list[index + 1][2] else len(self.emotions[data_split])
+            vid_end_idx = int(self.vidmap_list[index + 1][1]) if data_split == self.vidmap_list[index + 1][2] else len(self.emotions[data_split])
         else:
             vid_end_idx = int(self.vidmap_list[index + 1][1]) if index + 1 < len(self.vidmap_list) else len(self.emotions[data_split])
         # load features
@@ -111,10 +138,14 @@ class EEV_Dataset(data.Dataset):
         if frame_count % 6 != 0:
             video_length += 1
         while start_sec < video_length:
-            img_feat = img_feat[self._sample_indices_adv(self.sample_length, (start_sec * self.image_freq), img_feat.shape[0], self.image_freq, self.train_freq)] # [60, 2048]
-            au_feat = au_feat[self._sample_indices_adv(self.sample_length, start_sec, au_feat.shape[0], 1, self.train_freq)] # [60, 128]
-            img_feat_list.append(img_feat)
-            au_feat_list.append(au_feat)
+            if self.repeat_sample:
+                # Clip R S C
+                raise RuntimeError('Nooooo!')
+            else:
+                img_feat_out = img_feat[self._sample_indices_adv(self.sample_length, (start_sec * self.image_freq), img_feat.shape[0], self.image_freq, self.train_freq)] # [60, 2048]
+            au_feat_out = au_feat[self._sample_indices_adv(self.sample_length, start_sec, au_feat.shape[0], 1, self.train_freq)] # [60, 128]
+            img_feat_list.append(img_feat_out)
+            au_feat_list.append(au_feat_out)
             start_sec += (self.sample_length // self.train_freq) # step the correspond time step
         assert len(img_feat_list) == len(au_feat_list)
         return img_feat_list, au_feat_list, frame_count, vid
@@ -138,11 +169,23 @@ class EEV_Dataset(data.Dataset):
             video_length += 1
         while start_sec < video_length:
             # print(self._sample_indices_adv(self.sample_length, start_sec, au_feat.shape[0], 1, self.train_freq))
-            img_feat = img_feat[self._sample_indices_adv(self.sample_length, (start_sec * self.image_freq), img_feat.shape[0], self.image_freq, self.train_freq)] # [60, 2048]
-            au_feat = au_feat[self._sample_indices_adv(self.sample_length, start_sec, au_feat.shape[0], 1, self.train_freq)] # [60, 128]
+            if self.repeat_sample:
+                # Clip R S C
+                repeat = int(self.test_freq // self.train_freq)
+                img_r = []
+                
+                    # print('get val offset:', offset)
+                img_feat_out = img_feat[self._sample_indices_adv(self.sample_length * repeat, (start_sec * self.image_freq), img_feat.shape[0], self.image_freq, self.train_freq)]
+                print(img_feat.shape)
+                img_feat_out = rearrange(img_feat_out, '(S R) C -> R S C', R=repeat)
+            else:
+                img_feat_out = img_feat[self._sample_indices_adv(self.sample_length, (start_sec * self.image_freq), img_feat.shape[0], self.image_freq, self.train_freq)] # [60, 2048]
+            au_feat_out = au_feat[self._sample_indices_adv(self.sample_length, start_sec, au_feat.shape[0], 1, self.train_freq)] # [60, 128]
             labels = self.load_lables(self.emotions, self.sample_length * (self.val_freq // self.train_freq),  vid_start_idx + (start_sec * 6), vid_end_idx, self.val_freq) # [60, 15]
-            img_feat_list.append(img_feat)
-            au_feat_list.append(au_feat)
+            img_feat_list.append(img_feat_out)
+            au_feat_list.append(au_feat_out)
+            if self.cls_indices:
+                labels = labels[:, self.cls_indices]
             labels_list.append(labels)
             start_sec += (self.sample_length // self.train_freq) # step the correspond time step
         assert len(img_feat_list) == len(au_feat_list) and len(au_feat_list) == len(labels_list)
@@ -167,13 +210,15 @@ class EEV_Dataset(data.Dataset):
             b, a = signal.butter(2, 0.2, analog=False)
             flabels = signal.filtfilt(b ,a, labels, axis=0)
             flabels = np.maximum(0.0, flabels)
-            # labels = np.maximum(flabels, labels)
+            # labels = np.maximum(flabels, labels) T C
         elif self.filter == 'median':
             flabels = signal.medfilt(labels, [3, 1])
             labels = flabels
         elif self.filter == 'gaussian':
             flabels = ndimage.gaussian_filter1d(labels, 0.8, axis=0)
             labels = flabels
+        if self.cls_indices:
+            labels = labels[:, self.cls_indices]
         return img_feat, au_feat, labels
     
     

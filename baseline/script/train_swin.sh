@@ -1,22 +1,16 @@
 python3 main.py \
     --epochs=1000 \
-    --batch-size=128 -lr=0.0002 --print-freq=100 --eval-freq=3 \
+    --batch-size=128 -lr=0.00020 --print-freq=100 --eval-freq=3 \
     --train-freq=1 --val-freq=6 \
-    --use-multistep --step-milestones 40 80 --step-decay=0.3 \
+    --use-multistep --step-milestones 45 80 --step-decay=0.5 \
     --train-vidmap=/data0/EEV/code/tools/vidmap_train.txt \
     --train-csv=/data0/EEV/eev-csv/train.csv \
     --val-vidmap=/data0/EEV/code/tools/vidmap_val.txt \
     --val-csv=/data0/EEV/eev-csv/val.csv \
-    --image-features=/data/EEV/se_resnet_merged.hdf5 \
-    --au-feat-size=512 \
+    --img-feat-size=1536 --au-feat-size=512 \
+    --image-features=/data/EEV/swin_merged.hdf5 \
     --audio-features=/data/EEV/audio-zzd-feature
-    # --audio-features=/data0/EEV/feats/EEV_vggish_096Hz.hdf5
-    # --image-features=/data0/EEV/feats/EEV_InceptionV3_6Hz.hdf5 \
-    # --repeat-sample --workers=1 \
-    # --au-feat-size=512 \
-    # --audio-features=/data/EEV/audio-zzd-feature
-    # --cls-mask 0 \
-    # --image-features=/data0/EEV/feats/EEV_InceptionV3_6Hz.hdf5 \
+    # --model=BaseImg --weight-decay=0.0 \
     # --cls-indices 1 2 \
     # --model=EmoBase \
     # --use-sam \

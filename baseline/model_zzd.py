@@ -1,128 +1,130 @@
 import torch
 from torch import nn
 from einops import rearrange
+from torch.nn import init
+######################################################################
+class IBN(nn.Module):
+    r"""Instance-Batch Normalization layer from
+    `"Two at Once: Enhancing Learning and Generalization Capacities via IBN-Net" 
+    <https://arxiv.org/pdf/1807.09441.pdf>`
+    Args:
+        planes (int): Number of channels for the input tensor
+        ratio (float): Ratio of instance normalization in the IBN layer
+    """
+    def __init__(self, planes, ratio=0.5):
+        super(IBN, self).__init__()
+        self.half = int(planes * (1-ratio))
+        self.BN = nn.BatchNorm1d(self.half)
+        self.IN = nn.InstanceNorm1d(planes - self.half, affine=True)
+
+    def forward(self, x):
+        split = torch.split(x, self.half, 1)
+        out1 = self.BN(split[0].contiguous())
+        out2 = self.IN(split[1].contiguous())
+        out = torch.cat((out1, out2), 1)
+        return out
+
+def weights_init_kaiming(m):
+    classname = m.__class__.__name__
+    # print(classname)
+    if classname.find('Conv') != -1:
+        init.kaiming_normal_(m.weight.data, a=0, mode='fan_in') # For old pytorch, you may use kaiming_normal.
+    elif classname.find('Linear') != -1:
+        init.kaiming_normal_(m.weight.data, a=0, mode='fan_out')
+        init.constant_(m.bias.data, 0.0)
+    elif classname.find('BatchNorm1d') != -1:
+        init.normal_(m.weight.data, 1.0, 0.02)
+        init.constant_(m.bias.data, 0.0)
+
+def weights_init_classifier(m):
+    classname = m.__class__.__name__
+    if classname.find('Linear') != -1:
+        init.normal_(m.weight.data, std=0.001)
+        init.constant_(m.bias.data, 0.0)
+
+# Defines the new fc layer and classification layer
+# |--Linear--|--bn--|--relu--|--Linear--|
+class ClassBlock(nn.Module):
+    def __init__(self, input_dim, class_num, droprate=0.2, relu=False, bnorm=True, num_bottleneck=256, linear=True, return_f = False):
+        super(ClassBlock, self).__init__()
+        self.return_f = return_f
+        add_block = []
+        if linear:
+            add_block += [nn.Linear(input_dim, num_bottleneck)]
+        else:
+            num_bottleneck = input_dim
+        if relu:
+            add_block += [nn.LeakyReLU(0.1)]
+        add_block = nn.Sequential(*add_block)
+        add_block.apply(weights_init_kaiming)
+
+        #self.bn= nn.BatchNorm1d(num_bottleneck)
+        self.bn= IBN(num_bottleneck)
+        classifier = []
+        if droprate>0:
+            classifier += [nn.Dropout(p=droprate)]
+        classifier += [nn.Linear(num_bottleneck, class_num)]
+        classifier = nn.Sequential(*classifier)
+        classifier.apply(weights_init_classifier)
+
+        self.add_block = add_block
+        self.classifier = classifier
+    def forward(self, x):
+        x = self.add_block(x)
+        x = x.transpose(1,-1)
+        x = self.bn(x)
+        x = x.transpose(1,-1)
+        if self.return_f:
+            f = x
+            x = self.classifier(x)
+            return [x,f]
+        else:
+            x = self.classifier(x)
+            return x
+
+
 
 class Baseline(nn.Module):
-    def __init__(self, img_feat_size=2048, au_feat_size=128, num_classes=15):
+    def __init__(self):
         super(Baseline, self).__init__()
-        self.image_gru = nn.GRU(
-            input_size=img_feat_size, hidden_size=512, num_layers=2, batch_first=True, dropout=0.3, bidirectional=True)
-        self.audio_gru = nn.GRU(
-            input_size=au_feat_size, hidden_size=128, num_layers=2, batch_first=True, dropout=0.3, bidirectional=True)
-        self.contextGate1 = ContextGating(input_size=2 * (512 + 128))
-        # self.fusion = nn.Linear(2 * (512+128), 2 * (512+128), bias=True)
-        self.linear = nn.Linear(2 * (512+128), num_classes, bias=True)
-        self.contextGate2 = ContextGating(input_size=num_classes)
-        self.softmax = nn.Softmax(dim=2)
-
-    def forward(self, img, au):
-        self.image_gru.flatten_parameters()
-        self.audio_gru.flatten_parameters()
-        img_gru_out = self.image_gru(img)  # [B S 512]
-        au_gru_out = self.audio_gru(au)  # [B S 128]
-        x = torch.cat((img_gru_out[0], au_gru_out[0]), 2) # [B S 1280]
-        x = self.contextGate1(x) # [B S 1280]
-        # x = self.fusion(x)
-        x = self.linear(x)
-        # x = torch.sigmoid(x)
-        x = self.contextGate2(x) # [B S 15]
-        # scale = torch.Tensor([[[10, 100, 100, 1, 10, 10, 1, 10, 100, 100, 1, 10, 1, 10, 100]]]).cuda()
-        # x = x / scale
-        # x = self.softmax(x)
-        x = torch.sigmoid(x)
-        # x = torch.clamp(x, 0.0, 1.0)
-        
-        return x
-
-class EmoBase(nn.Module):
-    def __init__(self, num_classes=15):
-        super(EmoBase, self).__init__()
         self.image_gru = nn.GRU(
             input_size=2048, hidden_size=512, num_layers=2, batch_first=True, dropout=0.3, bidirectional=True)
         self.audio_gru = nn.GRU(
             input_size=128, hidden_size=128, num_layers=2, batch_first=True, dropout=0.3, bidirectional=True)
-        self.contextGate1 = ContextGating(input_size=2 * (512 + 128))
-        self.linear1 = nn.Linear(2 * (512+128), num_classes, bias=True)
-        self.contextGate2 = ContextGating(input_size=num_classes)
-        # mean prediction
-        self.contextGate3 = ContextGating(input_size=2 * (512 + 128))
-        self.linear2 =  nn.Linear(2 * (512+128), num_classes, bias=True)
-        self.contextGate4 = ContextGating(input_size=num_classes)
-        # std prediction
-        self.contextGate5 = ContextGating(input_size=2 * (512 + 128))
-        self.linear3 =  nn.Linear(2 * (512+128), num_classes, bias=True)
-        self.contextGate6 = ContextGating(input_size=num_classes)
+        self.contextGate_i1 = ContextGating(input_size=2 * 512)
+        self.contextGate_a1 = ContextGating(input_size=2 * 128)
+        self.image_linear = ClassBlock(2 * 512, 15)
+        self.audio_linear = ClassBlock(2 * 128, 15) 
+        self.contextGate_i2 = ContextGating(input_size=15)
+        self.contextGate_a2 = ContextGating(input_size=15)
+        self.softmax = nn.Softmax(dim=2)
+        self.p = nn.Parameter(torch.ones(())*0, requires_grad = True)
 
     def forward(self, img, au):
         self.image_gru.flatten_parameters()
         self.audio_gru.flatten_parameters()
         img_gru_out = self.image_gru(img)  # [B S 512]
         au_gru_out = self.audio_gru(au)  # [B S 128]
-        x = torch.cat((img_gru_out[0], au_gru_out[0]), 2) # [B S 1280]
-        # feats = torch.cat((img, au), 2)
-        # feats_mean = torch.mean(feats, dim=1) # [B 1 1280]
-        feats_mean = torch.mean(x, dim=1)
-        # prediction deviation
-        x = self.contextGate1(x) # [B S 1280]
-        x = self.linear1(x)
-        x = self.contextGate2(x) # [B S 15]
-        # predict mean
-        x_mean = self.contextGate3(feats_mean) # [B 1280]
-        x_mean = self.linear2(x_mean)
-        x_mean = self.contextGate4(x_mean) # [B 15]
-        # predict std
-        x_std = self.contextGate5(feats_mean) # [B 1280]
-        x_std = self.linear3(x_std)
-        x_std = self.contextGate6(x_std) # [B 15]
-        
-        output = x * x_std.unsqueeze(1) + x_mean.unsqueeze(1)
-        # output = torch.clamp(x, 0.0, 1.0)
-        return output, x_mean, x_std
-
-class Baseline_Img(nn.Module):
-    def __init__(self, img_feat_size):
-        super().__init__()
-        self.image_gru = nn.GRU(
-            input_size=img_feat_size, hidden_size=512, num_layers=2, batch_first=True, dropout=0.3, bidirectional=True)
-        self.contextGate1 = ContextGating(input_size=2 * (512))
-        self.linear = nn.Linear(2 * (512), 15, bias=True)
-        self.contextGate2 = ContextGating(input_size=15)
-
-    def forward(self, img):
-        self.image_gru.flatten_parameters()
-        x = self.image_gru(img)[0]  # [B S 512]
-        x = self.contextGate1(x) # [B S 1024]
-        x = self.linear(x)
-        x = self.contextGate2(x) # [B S 15]
+        #x = torch.cat((img_gru_out[0], au_gru_out[0]), 2) # [B S 1280]
+        xi = self.contextGate_i1(img_gru_out[0]) # [B S 1280]
+        xi = self.image_linear(xi)
+        xi = self.contextGate_i2(xi) # [B S 15]
         # x = self.softmax(x)
-        x = torch.sigmoid(x)
-        return x
-
-class Baseline_Au(nn.Module):
-    def __init__(self, au_feat_size):
-        super().__init__()
-        self.audio_gru = nn.GRU(
-            input_size=au_feat_size, hidden_size=128, num_layers=2, batch_first=True, dropout=0.3, bidirectional=True)
-        self.contextGate1 = ContextGating(input_size=2 * (128))
-        self.linear = nn.Linear(2 * (128), 15, bias=True)
-        self.contextGate2 = ContextGating(input_size=15)
-
-    def forward(self, au):
-        self.audio_gru.flatten_parameters()
-        x = self.audio_gru(au)[0]  # [B S 128]
-        x = self.contextGate1(x) # [B S 256]
-        x = self.linear(x)
-        x = self.contextGate2(x) # [B S 15]
-        # x = self.softmax(x)
-        x = torch.sigmoid(x)
-        return x
+        xa = self.contextGate_a1(au_gru_out[0]) # [B S 1280]
+        xa = self.audio_linear(xa)
+        xa = self.contextGate_a2(xa) # [B S 15]
+        p = torch.sigmoid(self.p)
+        x = torch.sigmoid(p*xi+(1-p)*xa)
+        xi = torch.sigmoid(xi)
+        xa = torch.sigmoid(xa)
+        return x, xi, xa
 
 
 class ContextGating(nn.Module):
     def __init__(self, input_size):
         super(ContextGating, self).__init__()
         self.linear = nn.Linear(input_size, input_size, bias=True)
-        # self.bn = nn.BatchNorm1d()
+        self.linear.apply(weights_init_kaiming)
 
     def forward(self, x):
         # print(x.size())
@@ -331,46 +333,3 @@ class TCFPN(nn.Module):
         avg = torch.mean(x, dim=0) # B Channel T
         out = rearrange(avg, 'B C T -> B T C')
         return out
-
-class MultiStageModel(nn.Module):
-    def __init__(self, num_stages, num_layers, num_f_maps, dim, num_classes):
-        super(MultiStageModel, self).__init__()
-        self.stage1 = SingleStageModel(num_layers, num_f_maps, dim, num_classes)
-        self.stages = nn.ModuleList([copy.deepcopy(SingleStageModel(num_layers, num_f_maps, num_classes, num_classes)) for s in range(num_stages-1)])
-
-    def forward(self, x, mask):
-        out = self.stage1(x, mask)
-        outputs = out.unsqueeze(0)
-        for s in self.stages:
-            out = s(torch.sigmoid(out) * mask[:, 0:1, :], mask)
-            outputs = torch.cat((outputs, out.unsqueeze(0)), dim=0)
-        return outputs
-
-
-class SingleStageModel(nn.Module):
-    def __init__(self, num_layers, num_f_maps, dim, num_classes):
-        super(SingleStageModel, self).__init__()
-        self.conv_1x1 = nn.Conv1d(dim, num_f_maps, 1)
-        self.layers = nn.ModuleList([copy.deepcopy(DilatedResidualLayer(2 ** i, num_f_maps, num_f_maps)) for i in range(num_layers)])
-        self.conv_out = nn.Conv1d(num_f_maps, num_classes, 1)
-
-    def forward(self, x, mask):
-        out = self.conv_1x1(x)
-        for layer in self.layers:
-            out = layer(out, mask)
-        out = self.conv_out(out) * mask[:, 0:1, :]
-        return out
-
-
-class DilatedResidualLayer(nn.Module):
-    def __init__(self, dilation, in_channels, out_channels):
-        super(DilatedResidualLayer, self).__init__()
-        self.conv_dilated = nn.Conv1d(in_channels, out_channels, 3, padding=dilation, dilation=dilation)
-        self.conv_1x1 = nn.Conv1d(out_channels, out_channels, 1)
-        self.dropout = nn.Dropout()
-
-    def forward(self, x, mask):
-        out = F.relu(self.conv_dilated(x))
-        out = self.conv_1x1(out)
-        out = self.dropout(out)
-        return (x + out) * mask[:, 0:1, :]
