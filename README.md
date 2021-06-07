@@ -2,7 +2,7 @@
 
 🏆 The 2nd Place Submission to the CVPR2021-Evoked Emotion from Videos challenge.
 
-This reposiotry contains the code base for our submission at the CVPR2021-Evoked Emotion from Videos challenge. Our method achieves a correlation score 0.04430 on the final private test set or the chanllenge.
+This reposiotry contains the code base for our submission at the CVPR2021-Evoked Emotion from Videos challenge. Our method achieves a correlation score 0.04430 on the final private test set of the chanllenge.
 
 The report can be found in arVix at [Less is More: Sparse Sampling for Dense Reaction Predictions](https://arxiv.org/abs/2106.01764)
 
@@ -18,7 +18,7 @@ The report can be found in arVix at [Less is More: Sparse Sampling for Dense Rea
 Download [EEV dataset](https://github.com/google-research-datasets/eev) from google. This will give you the list of videos with the links you need to download the raw videos (3 csv files to be exact).  We also provide a simple script to download the videos  in `/tools/download_eev.py` (requies youtube-dl).
 
 ```bash
-# download train and test (please specify OUPUT_PATH  and CSV_ROOT_PATH in script)
+# download train and test (please specify OUPUT_PATH and CSV_ROOT_PATH in script)
 python download_eev.py
 # download test
 python download_eev.py --download-tests
