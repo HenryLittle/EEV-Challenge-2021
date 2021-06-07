@@ -1,5 +1,7 @@
 # EEV-Challenge-2021
 
+🏆 The 2nd Place Submission to the CVPR2021-Evoked Emotion from Videos challenge.
+
 This reposiotry contains the code base for our submission at the CVPR2021-Evoked Emotion from Videos challenge. Our method achieves a correlation score 0.04430 on the final private test set or the chanllenge.
 
 The report can be found in arVix at [Less is More: Sparse Sampling for Dense Reaction Predictions](https://arxiv.org/abs/2106.01764)
